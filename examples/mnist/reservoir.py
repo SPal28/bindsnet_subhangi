@@ -40,7 +40,7 @@ parser.add_argument("--progress_interval", type=int, default=10)
 parser.add_argument("--update_interval", type=int, default=250)
 parser.add_argument("--plot", dest="plot", action="store_true")
 parser.add_argument("--gpu", dest="gpu", action="store_true")
-parser.set_defaults(plot=True, gpu=False, train=True)
+parser.set_defaults(plot=False, gpu=False, train=True)
 
 args = parser.parse_args()
 
@@ -413,7 +413,7 @@ plt.xticks(range(10))
 plt.yticks(range(10))
 conf_matrix_path = "/Users/subhangipal/Documents/Tutfs_SNN/conf_matrix/conf.png"
 plt.savefig(conf_matrix_path, dpi=300, bbox_inches="tight")
-plt.show(block = True)
+plt.close()
 
 
 
@@ -425,7 +425,7 @@ plt.title("Accuracy over time")
 plt.grid(True)
 accuracy_path = "/Users/subhangipal/Documents/Tutfs_SNN/accuracy_time/graph.png"
 plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
-plt.show(block = True)
+plt.close()
 
 
 
