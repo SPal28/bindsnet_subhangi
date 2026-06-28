@@ -40,7 +40,7 @@ parser.add_argument("--progress_interval", type=int, default=10)
 parser.add_argument("--update_interval", type=int, default=250)
 parser.add_argument("--plot", dest="plot", action="store_true")
 parser.add_argument("--gpu", dest="gpu", action="store_true")
-parser.set_defaults(plot=False, gpu=False, train=True)
+parser.set_defaults(plot=True, gpu=False, train=True)
 
 args = parser.parse_args()
 
@@ -116,7 +116,7 @@ C2 = MulticompartmentConnection(source = reservoir, target = reservoir, device =
 
 # Reservoir -> Output (STDP)
 C3_w = 0.1 * torch.rand(reservoir.n, output.n)
-weight_feature = Weight(name="ROweight", value= C3_w, learning_rule = PostPre, nu=(1e-2,1e-2), enforce_polarity = True, )
+weight_feature = Weight(name="ROweight", value= C3_w, learning_rule = PostPre, nu=(1e-2,1e-2), enforce_polarity=True)
 pipeline = [weight_feature]
 
 C3 = MulticompartmentConnection(source = reservoir, target = output, device = device, pipeline = pipeline)
@@ -341,7 +341,7 @@ iter_history = []
 correct = 0
 total = 0
 
-conf_matrix = torch.zeros(10, 10)
+# conf_matrix = torch.zeros(10, 10)
 
 pbar = tqdm(enumerate(dataloader))
 
@@ -384,7 +384,7 @@ for i, dataPoint in pbar:
     if prediction == true_label:
         correct += 1
 
-    conf_matrix[true_label, pred_label] += 1
+    #conf_matrix[true_label, pred_label] += 1
 
     running_acc = correct / total
 
@@ -425,43 +425,4 @@ print("\nAccuracy: %.2f %%" % (100.0 * correct / total))
 # plt.grid(True)
 # accuracy_path = "/Users/subhangipal/Documents/Tutfs_SNN/accuracy_time/graph.png"
 # plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
-# plt.close()
-
-
-
-
-
-
-
-
-
-
-# will eventually be used to calculate accuracy
-# correct = 0
-# total = 0
-
-# pbar = tqdm(enumerate(dataloader))
-
-# for i, dataPoint in pbar:
-#     if i > n_iters:
-#         break
-#     #preporcessing 
-#     datum = dataPoint["encoded_image"].view(int(time / dt),1,1,28,28,).to(device)
-#     label = dataPoint["label"]
-#     #runs the network
-#     network.run(inputs={"I": datum},time=time,)
-#     #gets the outputs where its shape is 250x10
-#     output_spikes = spikes["O"].get("s")
-#     spike_counts = output_spikes.sum(0)
-#     #argmax- rememvber that it returns the index of largest value 
-#     #question why do we want to largest number? bc we want the most spikes to win?
-#     prediction = spike_counts.argmax().item()
-#     #image total
-#     total += 1
-#     if prediction == label.item():
-#         correct += 1
-
-
-#     network.reset_state_variables()
-
-# print("\n accuracy: %.2f %%"% (100.0 * correct / total))
+# plt.close
