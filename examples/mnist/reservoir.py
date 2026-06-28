@@ -116,7 +116,7 @@ C2 = MulticompartmentConnection(source = reservoir, target = reservoir, device =
 
 # Reservoir -> Output (STDP)
 C3_w = 0.1 * torch.rand(reservoir.n, output.n)
-weight_feature = Weight(name="ROweight", value= C3_w, learning_rule = PostPre, nu=(1e-2,1e-2), )
+weight_feature = Weight(name="ROweight", value= C3_w, learning_rule = PostPre, nu=(1e-2,1e-2), enforce_polarity = True, )
 pipeline = [weight_feature]
 
 C3 = MulticompartmentConnection(source = reservoir, target = output, device = device, pipeline = pipeline)
@@ -399,33 +399,33 @@ for i, dataPoint in pbar:
 print("\nAccuracy: %.2f %%" % (100.0 * correct / total))
 
 
-print("\nConfusion Matrix:")
-print(conf_matrix)
+# print("\nConfusion Matrix:")
+# print(conf_matrix)
 
 
-plt.figure()
-plt.imshow(conf_matrix, interpolation="nearest")
-plt.title("Confusion Matrix")
-plt.xlabel("Predicted Label")
-plt.ylabel("True Label")
-plt.colorbar()
-plt.xticks(range(10))
-plt.yticks(range(10))
-conf_matrix_path = "/Users/subhangipal/Documents/Tutfs_SNN/conf_matrix/conf.png"
-plt.savefig(conf_matrix_path, dpi=300, bbox_inches="tight")
-plt.close()
+# plt.figure()
+# plt.imshow(conf_matrix, interpolation="nearest")
+# plt.title("Confusion Matrix")
+# plt.xlabel("Predicted Label")
+# plt.ylabel("True Label")
+# plt.colorbar()
+# plt.xticks(range(10))
+# plt.yticks(range(10))
+# conf_matrix_path = "/Users/subhangipal/Documents/Tutfs_SNN/conf_matrix/conf.png"
+# plt.savefig(conf_matrix_path, dpi=300, bbox_inches="tight")
+# plt.close()
 
 
 
-plt.figure()
-plt.plot(iter_history, acc_history)
-plt.xlabel("Iteration")
-plt.ylabel("Accuracy")
-plt.title("Accuracy over time")
-plt.grid(True)
-accuracy_path = "/Users/subhangipal/Documents/Tutfs_SNN/accuracy_time/graph.png"
-plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
-plt.close()
+# plt.figure()
+# plt.plot(iter_history, acc_history)
+# plt.xlabel("Iteration")
+# plt.ylabel("Accuracy")
+# plt.title("Accuracy over time")
+# plt.grid(True)
+# accuracy_path = "/Users/subhangipal/Documents/Tutfs_SNN/accuracy_time/graph.png"
+# plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
+# plt.close()
 
 
 
