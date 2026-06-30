@@ -2,6 +2,7 @@ import argparse
 import os
 
 import matplotlib.pyplot as plt
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -27,6 +28,7 @@ from bindsnet.network.topology import Connection
 from bindsnet.utils import get_square_weights
 from bindsnet.network.topology import MulticompartmentConnection
 
+job_id = os.environ.get("SLURM_JOB_ID", "local")
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--n_neurons", type=int, default=500)
@@ -40,7 +42,7 @@ parser.add_argument("--progress_interval", type=int, default=10)
 parser.add_argument("--update_interval", type=int, default=250)
 parser.add_argument("--plot", dest="plot", action="store_true")
 parser.add_argument("--gpu", dest="gpu", action="store_true")
-parser.set_defaults(plot=True, gpu=False, train=True)
+parser.set_defaults(plot=False, gpu=False, train=True)
 
 args = parser.parse_args()
 
@@ -341,7 +343,7 @@ iter_history = []
 correct = 0
 total = 0
 
-# conf_matrix = torch.zeros(10, 10)
+conf_matrix = torch.zeros(10, 10)
 
 pbar = tqdm(enumerate(dataloader))
 
@@ -384,7 +386,7 @@ for i, dataPoint in pbar:
     if prediction == true_label:
         correct += 1
 
-    #conf_matrix[true_label, pred_label] += 1
+    conf_matrix[true_label, pred_label] += 1
 
     running_acc = correct / total
 
@@ -399,30 +401,30 @@ for i, dataPoint in pbar:
 print("\nAccuracy: %.2f %%" % (100.0 * correct / total))
 
 
-# print("\nConfusion Matrix:")
-# print(conf_matrix)
+print("\nConfusion Matrix:")
+print(conf_matrix)
 
 
-# plt.figure()
-# plt.imshow(conf_matrix, interpolation="nearest")
-# plt.title("Confusion Matrix")
-# plt.xlabel("Predicted Label")
-# plt.ylabel("True Label")
-# plt.colorbar()
-# plt.xticks(range(10))
-# plt.yticks(range(10))
-# conf_matrix_path = "/Users/subhangipal/Documents/Tutfs_SNN/conf_matrix/conf.png"
-# plt.savefig(conf_matrix_path, dpi=300, bbox_inches="tight")
-# plt.close()
+plt.figure()
+plt.imshow(conf_matrix, interpolation="nearest")
+plt.title("Confusion Matrix")
+plt.xlabel("Predicted Label")
+plt.ylabel("True Label")
+plt.colorbar()
+plt.xticks(range(10))
+plt.yticks(range(10))
+conf_matrix_path = f"/cluster/home/spal02/bindsnet_graphs/conf_matrix_job_{job_id}.png"
+plt.savefig(conf_matrix_path, dpi=300, bbox_inches="tight")
+plt.close()
 
 
 
-# plt.figure()
-# plt.plot(iter_history, acc_history)
-# plt.xlabel("Iteration")
-# plt.ylabel("Accuracy")
-# plt.title("Accuracy over time")
-# plt.grid(True)
-# accuracy_path = "/Users/subhangipal/Documents/Tutfs_SNN/accuracy_time/graph.png"
-# plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
-# plt.close
+plt.figure()
+plt.plot(iter_history, acc_history)
+plt.xlabel("Iteration")
+plt.ylabel("Accuracy")
+plt.title("Accuracy over time")
+plt.grid(True)
+accuracy_path = f"/cluster/home/spal02/bindsnet_graphs/accuracy_job_{job_id}.png"
+plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
+plt.close
