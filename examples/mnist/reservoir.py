@@ -130,7 +130,7 @@ print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
 # Output -> Output (recurrent)
-inh = -10 * (torch.ones(output.n, output.n)- torch.eye(output.n))
+inh = -20 * (torch.ones(output.n, output.n)- torch.eye(output.n))
 
 weight_feature = Weight(name="output_inhibition_weight",value=inh)
 pipeline = [weight_feature]
@@ -413,7 +413,7 @@ plt.ylabel("True Label")
 plt.colorbar()
 plt.xticks(range(10))
 plt.yticks(range(10))
-conf_matrix_path = f"/cluster/home/spal02/bindsnet_graphs/conf_matrix_job_{job_id}.png"
+conf_matrix_path = f"/cluster/home/spal02/bindsnet_graphs/conf_matrix/conf_matrix_job_{job_id}.png"
 plt.savefig(conf_matrix_path, dpi=300, bbox_inches="tight")
 plt.close()
 
@@ -425,6 +425,6 @@ plt.xlabel("Iteration")
 plt.ylabel("Accuracy")
 plt.title("Accuracy over time")
 plt.grid(True)
-accuracy_path = f"/cluster/home/spal02/bindsnet_graphs/accuracy_job_{job_id}.png"
+accuracy_path = f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/accuracy_job_{job_id}.png"
 plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
 plt.close()
