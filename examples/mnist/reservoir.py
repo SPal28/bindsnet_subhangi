@@ -427,4 +427,4 @@ plt.title("Accuracy over time")
 plt.grid(True)
 accuracy_path = f"/cluster/home/spal02/bindsnet_graphs/accuracy_job_{job_id}.png"
 plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
-plt.close
+plt.close()
