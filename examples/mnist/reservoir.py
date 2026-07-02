@@ -118,7 +118,7 @@ C2 = MulticompartmentConnection(source = reservoir, target = reservoir, device =
 
 # Reservoir -> Output (STDP)
 C3_w = 0.1 * torch.rand(reservoir.n, output.n)
-weight_feature = Weight(name="ROweight", value= C3_w, learning_rule = PostPre, nu=(1e-2,1e-2), enforce_polarity=False)
+weight_feature = Weight(name="ROweight", value= C3_w, learning_rule = PostPre, nu=(1e-4,1e-1), enforce_polarity=False)
 pipeline = [weight_feature]
 
 C3 = MulticompartmentConnection(source = reservoir, target = output, device = device, pipeline = pipeline)
@@ -130,7 +130,7 @@ print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
 # Output -> Output (recurrent)
-inh = -20 * (torch.ones(output.n, output.n)- torch.eye(output.n))
+inh = -10 * (torch.ones(output.n, output.n)- torch.eye(output.n))
 
 weight_feature = Weight(name="output_inhibition_weight",value=inh)
 pipeline = [weight_feature]
