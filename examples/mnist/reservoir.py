@@ -95,7 +95,7 @@ output = LIFNodes(10, traces=True,)
 network.add_layer(output, name="O")
 
 # Input -> Reservoir 
-C1_w = 0.25 * torch.randn(inpt.n, reservoir.n)
+C1_w = 1 * torch.randn(inpt.n, reservoir.n)
 
 weight_feature = Weight(name="IRweight", value=C1_w)
 pipeline = [weight_feature]
@@ -107,7 +107,7 @@ C1 = MulticompartmentConnection(source = inpt, target = reservoir, device = devi
 
 # Reservoir -> Reservoir (recurrent)
 # rand - biological (meaning that it shouldnt be both negative or positive)
-C2_w = 0.5 * torch.randn(reservoir.n, reservoir.n)
+C2_w = 0.25 * torch.randn(reservoir.n, reservoir.n)
 
 weight_feature = Weight(name = "RRweight", value = C2_w)
 pipeline = [weight_feature]
