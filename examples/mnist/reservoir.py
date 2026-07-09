@@ -33,7 +33,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--n_neurons", type=int, default=500)
 parser.add_argument("--n_epochs", type=int, default=100)
-parser.add_argument("--examples", type=int, default=500)
+parser.add_argument("--examples", type=int, default=5000)
 parser.add_argument("--n_workers", type=int, default=-1)
 parser.add_argument("--time", type=int, default=250)
 parser.add_argument("--dt", type=int, default=1.0)
@@ -95,7 +95,7 @@ output = LIFNodes(10, traces=True,)
 network.add_layer(output, name="O")
 
 # Input -> Reservoir 
-C1_w = 0.1 * torch.randn(inpt.n, reservoir.n)
+C1_w = 0.5 * torch.randn(inpt.n, reservoir.n)
 
 weight_feature = Weight(name="IRweight", value=C1_w)
 pipeline = [weight_feature]
@@ -107,7 +107,7 @@ C1 = MulticompartmentConnection(source = inpt, target = reservoir, device = devi
 
 # Reservoir -> Reservoir (recurrent)
 # rand - biological (meaning that it shouldnt be both negative or positive)
-C2_w = 0.1 * torch.randn(reservoir.n, reservoir.n)
+C2_w = 0.5 * torch.randn(reservoir.n, reservoir.n)
 
 weight_feature = Weight(name = "RRweight", value = C2_w)
 pipeline = [weight_feature]
@@ -130,7 +130,7 @@ print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
 # Output -> Output (recurrent)
-inh = -10 * (torch.ones(output.n, output.n)- torch.eye(output.n))
+inh = -40 * (torch.ones(output.n, output.n)- torch.eye(output.n))
 
 weight_feature = Weight(name="output_inhibition_weight",value=inh)
 pipeline = [weight_feature]
