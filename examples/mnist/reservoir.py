@@ -118,7 +118,7 @@ C2 = MulticompartmentConnection(source = reservoir, target = reservoir, device =
 
 # Reservoir -> Output (STDP)
 C3_w = 0.1 * torch.rand(reservoir.n, output.n)
-weight_feature = Weight(name="ROweight", value= C3_w, learning_rule = PostPre, nu=(1e-1,1e-10), enforce_polarity=True)
+weight_feature = Weight(name="ROweight", value= C3_w, learning_rule = PostPre, nu=(1e-2,1e-2), enforce_polarity=True)
 pipeline = [weight_feature]
 
 C3 = MulticompartmentConnection(source = reservoir, target = output, device = device, pipeline = pipeline)
@@ -191,61 +191,61 @@ dataloader = torch.utils.data.DataLoader(
 # Note: Because this is a reservoir network, no adjustments of neuron parameters occurs in this phase.
 n_iters = examples
 
-# data loader - takes in one MNIST sample at a time 
-# enumerate - for x in dataloader returns (index, actual item)
-# tqdm creates a prgress bar 
-pbar = tqdm(enumerate(dataloader))
+
 # i - because of enumerate i contains 1,2,3,4,...
 # datapoint - contains one MNIST sample 
-for i, dataPoint in pbar:
-    if i > n_iters:
-        break
-    # Extract & resize the MNIST samples image data for training
-    #       int(time / dt)  -> length of spike train
-    #       28 x 28         -> size of sample
-    # datum is holding the spike data (ex. 1011101)
-    # .view is rehsping the spkie train (250 timesteps, 1 batch, 1 channel, 28 rwos, 28 cols)
-    datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
-    #extract label 
-    label = dataPoint["label"]
-    pbar.set_description_str("Train progress: (%d / %d)" % (i, n_iters))
+for epoch in range(n_epochs):
+    pbar = tqdm(enumerate(dataloader))
+    print(f"\nEpoch {epoch+1}/{n_epochs}")
+    for i, dataPoint in pbar:
+        if i > n_iters:
+            break
+        # Extract & resize the MNIST samples image data for training
+        #       int(time / dt)  -> length of spike train
+        #       28 x 28         -> size of sample
+        # datum is holding the spike data (ex. 1011101)
+        # .view is rehsping the spkie train (250 timesteps, 1 batch, 1 channel, 28 rwos, 28 cols)
+        datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
+        #extract label 
+        label = dataPoint["label"]
+        pbar.set_description_str("Train progress: (%d / %d)" % (i, n_iters))
 
-    # Run network on sample image
-    # layer I for 250 timespetps 
-    network.run(inputs={"I": datum}, time=time)
+        # Run network on sample image
+        # layer I for 250 timespetps 
+        network.run(inputs={"I": datum}, time=time)
 
-       
-    # Plot spiking activity using monitors
-    if plot:
-        # Plot the current image and reconstructed/encoded image
-        inpt_axes, inpt_ims = plot_input(
-            dataPoint["image"].view(28, 28),
-            datum.view(int(time / dt), 784).sum(0).view(28, 28),
-            label=label,
-            axes=inpt_axes,
-            ims=inpt_ims,
-        )
-        # Plot spikes
-        spike_ims, spike_axes = plot_spikes(
-            {layer: spikes[layer].get("s").view(time, -1) for layer in spikes},
-            axes=spike_axes,
-            ims=spike_ims,
-        )
-        # Plot voltages
-        voltage_ims, voltage_axes = plot_voltages(
-            {layer: voltages[layer].get("v").view(time, -1) for layer in voltages},
-            ims=voltage_ims,
-            axes=voltage_axes,
-        )
-        # Plot weights between input and output
-        weights_im = plot_weights(
-            get_square_weights(C1_w, 23, 28), im=weights_im, wmin=-2, wmax=2
-        )
-        # Plot weights between output and output
-        weights_im2 = plot_weights(C2_w, im=weights_im2, wmin=-2, wmax=2)
+        
+        # Plot spiking activity using monitors
+        if plot:
+            # Plot the current image and reconstructed/encoded image
+            inpt_axes, inpt_ims = plot_input(
+                dataPoint["image"].view(28, 28),
+                datum.view(int(time / dt), 784).sum(0).view(28, 28),
+                label=label,
+                axes=inpt_axes,
+                ims=inpt_ims,
+            )
+            # Plot spikes
+            spike_ims, spike_axes = plot_spikes(
+                {layer: spikes[layer].get("s").view(time, -1) for layer in spikes},
+                axes=spike_axes,
+                ims=spike_ims,
+            )
+            # Plot voltages
+            voltage_ims, voltage_axes = plot_voltages(
+                {layer: voltages[layer].get("v").view(time, -1) for layer in voltages},
+                ims=voltage_ims,
+                axes=voltage_axes,
+            )
+            # Plot weights between input and output
+            weights_im = plot_weights(
+                get_square_weights(C1_w, 23, 28), im=weights_im, wmin=-2, wmax=2
+            )
+            # Plot weights between output and output
+            weights_im2 = plot_weights(C2_w, im=weights_im2, wmin=-2, wmax=2)
 
-        plt.pause(1e-8)
-    network.reset_state_variables()
+            plt.pause(1e-8)
+        network.reset_state_variables()
 
 # DEBUG
 print("After training C3 weights:")
