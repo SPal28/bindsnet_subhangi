@@ -130,7 +130,7 @@ print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
 # Output -> Output (recurrent)
-inh = -70 * (torch.ones(output.n, output.n)- torch.eye(output.n))
+inh = -80 * (torch.ones(output.n, output.n)- torch.eye(output.n))
 
 weight_feature = Weight(name="output_inhibition_weight",value=inh)
 pipeline = [weight_feature]
