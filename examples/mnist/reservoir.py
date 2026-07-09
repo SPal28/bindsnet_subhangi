@@ -37,7 +37,7 @@ parser.add_argument("--examples", type=int, default=500)
 parser.add_argument("--n_workers", type=int, default=-1)
 parser.add_argument("--time", type=int, default=250)
 parser.add_argument("--dt", type=int, default=1.0)
-parser.add_argument("--intensity", type=float, default=128)
+parser.add_argument("--intensity", type=float, default=64)
 parser.add_argument("--progress_interval", type=int, default=10)
 parser.add_argument("--update_interval", type=int, default=250)
 parser.add_argument("--plot", dest="plot", action="store_true")
@@ -95,7 +95,7 @@ output = LIFNodes(10, traces=True,)
 network.add_layer(output, name="O")
 
 # Input -> Reservoir 
-C1_w = 0.5 * torch.randn(inpt.n, reservoir.n)
+C1_w = 0.25 * torch.randn(inpt.n, reservoir.n)
 
 weight_feature = Weight(name="IRweight", value=C1_w)
 pipeline = [weight_feature]
