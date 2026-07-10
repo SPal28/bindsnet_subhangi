@@ -197,7 +197,7 @@ n_iters = examples
 # datapoint - contains one MNIST sample 
 for epoch in range(n_epochs):
     pbar = tqdm(enumerate(dataloader))
-    print(f"\nEpoch {epoch+1}/{n_epochs}")
+    # print(f"\nEpoch {epoch+1}/{n_epochs}")
     for i, dataPoint in pbar:
         if i >= n_iters:
             break
