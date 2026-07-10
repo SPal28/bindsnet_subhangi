@@ -33,7 +33,7 @@ job_id = os.environ.get("SLURM_JOB_ID", "local")
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--n_neurons", type=int, default=500)
-parser.add_argument("--n_epochs", type=int, default=100)
+parser.add_argument("--n_epochs", type=int, default=5)
 parser.add_argument("--examples", type=int, default=500)
 parser.add_argument("--n_workers", type=int, default=-1)
 parser.add_argument("--time", type=int, default=250)
@@ -192,6 +192,8 @@ dataloader = torch.utils.data.DataLoader(
 # Note: Because this is a reservoir network, no adjustments of neuron parameters occurs in this phase.
 n_iters = examples
 
+epoch_acc_history = []
+epoch_numbers = []
 
 # i - because of enumerate i contains 1,2,3,4,...
 # datapoint - contains one MNIST sample 
@@ -247,6 +249,67 @@ for epoch in range(n_epochs):
 
             plt.pause(1e-8)
         network.reset_state_variables()
+
+        network.reset_state_variables()
+
+    print(f"\nFinished Epoch {epoch+1}/{n_epochs}")
+
+    # -----------------------------
+    # Evaluate accuracy after epoch
+    # -----------------------------
+
+    saved_spikes = []
+    saved_labels = []
+
+    assignments = torch.zeros(10, dtype=torch.long)
+    proportions = torch.zeros(10, 10)
+
+    for j, dataPoint in enumerate(dataloader):
+
+        if j >= n_iters:
+            break
+
+        datum = dataPoint["encoded_image"].view(
+            int(time / dt), 1, 1, 28, 28
+        ).to(device)
+
+        label = dataPoint["label"]
+
+        network.run(inputs={"I": datum}, time=time)
+
+        spike_counts = spikes["O"].get("s").sum(0).squeeze()
+
+        proportions[:, label.item()] += spike_counts
+
+        saved_spikes.append(spike_counts.clone())
+        saved_labels.append(label.item())
+
+        network.reset_state_variables()
+
+    # Assign output neurons
+    for neuron in range(10):
+        assignments[neuron] = torch.argmax(proportions[neuron])
+
+    # Compute accuracy
+    correct = 0
+    total = 0
+
+    for spike_counts, true_label in zip(saved_spikes, saved_labels):
+
+        winning_neuron = spike_counts.argmax().item()
+        prediction = assignments[winning_neuron].item()
+
+        total += 1
+
+        if prediction == true_label:
+            correct += 1
+
+    accuracy = 100 * correct / total
+
+    print(f"Epoch {epoch+1}: Accuracy = {accuracy:.2f}%")
+
+    epoch_numbers.append(epoch + 1)
+    epoch_acc_history.append(accuracy)
 
 # DEBUG
 print("After training C3 weights:")
@@ -363,4 +426,17 @@ plt.title("Accuracy over time")
 plt.grid(True)
 accuracy_path = f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/accuracy_job_{job_id}.png"
 plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
+plt.close()
+
+
+plt.figure(figsize=(6,4))
+plt.plot(epoch_numbers, epoch_acc_history, marker='o')
+plt.xlabel("Epoch")
+plt.ylabel("Accuracy (%)")
+plt.title("Accuracy After Each Epoch")
+plt.grid(True)
+
+epoch_plot_path = f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/epoch_accuracy_job_{job_id}.png"
+
+plt.savefig(epoch_plot_path, dpi=300, bbox_inches="tight")
 plt.close()
