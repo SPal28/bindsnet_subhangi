@@ -1,4 +1,3 @@
-
 import argparse
 import os
 
@@ -33,7 +32,7 @@ job_id = os.environ.get("SLURM_JOB_ID", "local")
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--n_neurons", type=int, default=500)
-parser.add_argument("--n_epochs", type=int, default=5)
+parser.add_argument("--n_epochs", type=int, default=2)
 parser.add_argument("--examples", type=int, default=500)
 parser.add_argument("--n_workers", type=int, default=-1)
 parser.add_argument("--time", type=int, default=250)
@@ -43,7 +42,7 @@ parser.add_argument("--progress_interval", type=int, default=10)
 parser.add_argument("--update_interval", type=int, default=250)
 parser.add_argument("--plot", dest="plot", action="store_true")
 parser.add_argument("--gpu", dest="gpu", action="store_true")
-parser.set_defaults(plot=False, gpu=False, train=True)
+parser.set_defaults(plot=True, gpu=False, train=True)
 
 args = parser.parse_args()
 
@@ -118,7 +117,7 @@ C2 = MulticompartmentConnection(source = reservoir, target = reservoir, device =
 
 
 # Reservoir -> Output (STDP)
-C3_w = 0.1 * torch.rand(reservoir.n, output.n)
+C3_w = 0.3 * torch.rand(reservoir.n, output.n)
 weight_feature = Weight(name="ROweight", value= C3_w, learning_rule = PostPre, nu=(1e-2,1e-2), enforce_polarity=True)
 pipeline = [weight_feature]
 
@@ -131,7 +130,7 @@ print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
 # Output -> Output (recurrent)
-inh = -40 * (torch.ones(output.n, output.n)- torch.eye(output.n))
+inh = -10 * (torch.ones(output.n, output.n)- torch.eye(output.n))
 
 weight_feature = Weight(name="output_inhibition_weight",value=inh)
 pipeline = [weight_feature]
@@ -192,124 +191,61 @@ dataloader = torch.utils.data.DataLoader(
 # Note: Because this is a reservoir network, no adjustments of neuron parameters occurs in this phase.
 n_iters = examples
 
-epoch_acc_history = []
-epoch_numbers = []
-
+# data loader - takes in one MNIST sample at a time 
+# enumerate - for x in dataloader returns (index, actual item)
+# tqdm creates a prgress bar 
+pbar = tqdm(enumerate(dataloader))
 # i - because of enumerate i contains 1,2,3,4,...
 # datapoint - contains one MNIST sample 
-for epoch in range(n_epochs):
-    pbar = tqdm(enumerate(dataloader))
-    # print(f"\nEpoch {epoch+1}/{n_epochs}")
-    for i, dataPoint in pbar:
-        if i >= n_iters:
-            break
-        # Extract & resize the MNIST samples image data for training
-        #       int(time / dt)  -> length of spike train
-        #       28 x 28         -> size of sample
-        # datum is holding the spike data (ex. 1011101)
-        # .view is rehsping the spkie train (250 timesteps, 1 batch, 1 channel, 28 rwos, 28 cols)
-        datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
-        #extract label 
-        label = dataPoint["label"]
-        pbar.set_description_str("Train progress: (%d / %d)" % (i, n_iters))
+for i, dataPoint in pbar:
+    if i > n_iters:
+        break
+    # Extract & resize the MNIST samples image data for training
+    #       int(time / dt)  -> length of spike train
+    #       28 x 28         -> size of sample
+    # datum is holding the spike data (ex. 1011101)
+    # .view is rehsping the spkie train (250 timesteps, 1 batch, 1 channel, 28 rwos, 28 cols)
+    datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
+    #extract label 
+    label = dataPoint["label"]
+    pbar.set_description_str("Train progress: (%d / %d)" % (i, n_iters))
 
-        # Run network on sample image
-        # layer I for 250 timespetps 
-        network.run(inputs={"I": datum}, time=time)
+    # Run network on sample image
+    # layer I for 250 timespetps 
+    network.run(inputs={"I": datum}, time=time)
 
-        
-        # Plot spiking activity using monitors
-        if plot:
-            # Plot the current image and reconstructed/encoded image
-            inpt_axes, inpt_ims = plot_input(
-                dataPoint["image"].view(28, 28),
-                datum.view(int(time / dt), 784).sum(0).view(28, 28),
-                label=label,
-                axes=inpt_axes,
-                ims=inpt_ims,
-            )
-            # Plot spikes
-            spike_ims, spike_axes = plot_spikes(
-                {layer: spikes[layer].get("s").view(time, -1) for layer in spikes},
-                axes=spike_axes,
-                ims=spike_ims,
-            )
-            # Plot voltages
-            voltage_ims, voltage_axes = plot_voltages(
-                {layer: voltages[layer].get("v").view(time, -1) for layer in voltages},
-                ims=voltage_ims,
-                axes=voltage_axes,
-            )
-            # Plot weights between input and output
-            weights_im = plot_weights(
-                get_square_weights(C1_w, 23, 28), im=weights_im, wmin=-2, wmax=2
-            )
-            # Plot weights between output and output
-            weights_im2 = plot_weights(C2_w, im=weights_im2, wmin=-2, wmax=2)
+       
+    # Plot spiking activity using monitors
+    if plot:
+        # Plot the current image and reconstructed/encoded image
+        inpt_axes, inpt_ims = plot_input(
+            dataPoint["image"].view(28, 28),
+            datum.view(int(time / dt), 784).sum(0).view(28, 28),
+            label=label,
+            axes=inpt_axes,
+            ims=inpt_ims,
+        )
+        # Plot spikes
+        spike_ims, spike_axes = plot_spikes(
+            {layer: spikes[layer].get("s").view(time, -1) for layer in spikes},
+            axes=spike_axes,
+            ims=spike_ims,
+        )
+        # Plot voltages
+        voltage_ims, voltage_axes = plot_voltages(
+            {layer: voltages[layer].get("v").view(time, -1) for layer in voltages},
+            ims=voltage_ims,
+            axes=voltage_axes,
+        )
+        # Plot weights between input and output
+        weights_im = plot_weights(
+            get_square_weights(C1_w, 23, 28), im=weights_im, wmin=-2, wmax=2
+        )
+        # Plot weights between output and output
+        weights_im2 = plot_weights(C2_w, im=weights_im2, wmin=-2, wmax=2)
 
-            plt.pause(1e-8)
-        network.reset_state_variables()
-
-        network.reset_state_variables()
-
-    print(f"\nFinished Epoch {epoch+1}/{n_epochs}")
-
-    # -----------------------------
-    # Evaluate accuracy after epoch
-    # -----------------------------
-
-    saved_spikes = []
-    saved_labels = []
-
-    assignments = torch.zeros(10, dtype=torch.long)
-    proportions = torch.zeros(10, 10)
-
-    for j, dataPoint in enumerate(dataloader):
-
-        if j >= n_iters:
-            break
-
-        datum = dataPoint["encoded_image"].view(
-            int(time / dt), 1, 1, 28, 28
-        ).to(device)
-
-        label = dataPoint["label"]
-
-        network.run(inputs={"I": datum}, time=time)
-
-        spike_counts = spikes["O"].get("s").sum(0).squeeze()
-
-        proportions[:, label.item()] += spike_counts
-
-        saved_spikes.append(spike_counts.clone())
-        saved_labels.append(label.item())
-
-        network.reset_state_variables()
-
-    # Assign output neurons
-    for neuron in range(10):
-        assignments[neuron] = torch.argmax(proportions[neuron])
-
-    # Compute accuracy
-    correct = 0
-    total = 0
-
-    for spike_counts, true_label in zip(saved_spikes, saved_labels):
-
-        winning_neuron = spike_counts.argmax().item()
-        prediction = assignments[winning_neuron].item()
-
-        total += 1
-
-        if prediction == true_label:
-            correct += 1
-
-    accuracy = 100 * correct / total
-
-    print(f"Epoch {epoch+1}: Accuracy = {accuracy:.2f}%")
-
-    epoch_numbers.append(epoch + 1)
-    epoch_acc_history.append(accuracy)
+        plt.pause(1e-8)
+    network.reset_state_variables()
 
 # DEBUG
 print("After training C3 weights:")
@@ -317,10 +253,37 @@ print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
 
+# Run same simulation on reservoir with testing data instead of training data
+# (see training section for intuition)
+n_iters = examples
+
+pbar = tqdm(enumerate(dataloader))
+for i, dataPoint in pbar:
+    if i > n_iters:
+        break
+    datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
+    label = dataPoint["label"]
+    pbar.set_description_str("Testing progress: (%d / %d)" % (i, n_iters))
+
+    network.run(inputs={"I": datum}, time=time)
+
+    
+
+    #retrives rhe output spikes (250x10), sum(0) sums scross time
+    print(spikes["O"].get("s").sum(0)) # important
+
+    if plot:
+        inpt_axes, inpt_ims = plot_input(dataPoint["image"].view(28, 28),datum.view(time, 784).sum(0).view(28, 28),label=label,axes=inpt_axes,ims=inpt_ims,)
+        spike_ims, spike_axes = plot_spikes({layer: spikes[layer].get("s").view(time, -1) for layer in spikes},axes=spike_axes,ims=spike_ims,)
+        voltage_ims, voltage_axes = plot_voltages({layer: voltages[layer].get("v").view(time, -1) for layer in voltages},ims=voltage_ims,axes=voltage_axes,)
+        weights_im = plot_weights(get_square_weights(C1_w, 23, 28), im=weights_im, wmin=-2, wmax=2)
+        #recurrent weights
+        weights_im2 = plot_weights(C2_w, im=weights_im2, wmin=-2, wmax=2)
+
+        plt.pause(1e-8)
+    network.reset_state_variables()
 
 
-saved_spikes = []
-saved_labels = []
 
 #creates empty tensor with 10 zero avlues 
 assignments = torch.zeros(10, dtype=torch.long)
@@ -334,7 +297,7 @@ proportions = torch.zeros(10, 10)
 # to determine what digit each neuron represents
 for i, dataPoint in enumerate(dataloader):
 
-    if i >= n_iters:
+    if i > n_iters:
         break
 
     # preprocess image ( shapes the image to what bindsnet expects)
@@ -347,15 +310,19 @@ for i, dataPoint in enumerate(dataloader):
     network.run(inputs={"I": datum},time=time,)
 
    
+    # count output spikes for each neuron
+    # RuntimeError: output with shape [10] doesn't match the broadcast shape [1, 10] --> need squeeze
     spike_counts = spikes["O"].get("s").sum(0).squeeze()
 
+
+    # Add spike counts to the corresponding digit
+    # label.item() gives the true digit (0-9)
+    # supposed label = 7 and spike_counts = {1,2,4,,6,7,83,}.... then proprotions gets updated neuron __ got __ spieks for digit __
     proportions[:, label.item()] += spike_counts
 
-    # Save the spike counts for later accuracy calculation
-    saved_spikes.append(spike_counts.clone())
-    saved_labels.append(label.item())
 
     network.reset_state_variables()
+
 
 
 #assigns each output neuron the digit it responded to most
@@ -378,23 +345,57 @@ total = 0
 
 conf_matrix = torch.zeros(10, 10)
 
-for i, (spike_counts, true_label) in enumerate(zip(saved_spikes, saved_labels)):
+pbar = tqdm(enumerate(dataloader))
 
+for i, dataPoint in pbar:
+
+    if i > n_iters:
+        break
+
+
+    # preprocess image
+    datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
+
+    label = dataPoint["label"]
+
+
+    # run network
+    network.run(
+        inputs={"I": datum},time=time,)
+
+
+    # get output spikes
+    output_spikes = spikes["O"].get("s")
+
+    spike_counts = output_spikes.sum(0)
+
+
+    # Find neuron with the most spikes
     winning_neuron = spike_counts.argmax().item()
 
+
+    # Convert neuron ID into digit label
     prediction = assignments[winning_neuron].item()
 
+
     total += 1
+
+    true_label = label.item()
+    pred_label = prediction
 
     if prediction == true_label:
         correct += 1
 
-    conf_matrix[true_label, prediction] += 1
+    conf_matrix[true_label, pred_label] += 1
 
     running_acc = correct / total
 
+    # store values for plotting
     acc_history.append(running_acc)
     iter_history.append(i)
+
+    network.reset_state_variables()
+
 
 
 print("\nAccuracy: %.2f %%" % (100.0 * correct / total))
@@ -426,17 +427,4 @@ plt.title("Accuracy over time")
 plt.grid(True)
 accuracy_path = f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/accuracy_job_{job_id}.png"
 plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
-plt.close()
-
-
-plt.figure(figsize=(6,4))
-plt.plot(epoch_numbers, epoch_acc_history, marker='o')
-plt.xlabel("Epoch")
-plt.ylabel("Accuracy (%)")
-plt.title("Accuracy After Each Epoch")
-plt.grid(True)
-
-epoch_plot_path = f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/epoch_accuracy_job_{job_id}.png"
-
-plt.savefig(epoch_plot_path, dpi=300, bbox_inches="tight")
 plt.close()
