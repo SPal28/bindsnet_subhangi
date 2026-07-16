@@ -31,7 +31,7 @@ job_id = os.environ.get("SLURM_JOB_ID", "local")
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--n_neurons", type=int, default=500)
-parser.add_argument("--n_epochs", type=int, default=2)
+parser.add_argument("--n_epochs", type=int, default=1)
 parser.add_argument("--examples", type=int, default=500)
 parser.add_argument("--n_workers", type=int, default=-1)
 parser.add_argument("--time", type=int, default=250)
@@ -77,21 +77,17 @@ print("Running on Device = ", device)
 # dt = simulation timestep
 network = Network(dt=dt)
 
-# Input layer
+# Input layer - 784 neurons, 1 image channel (grayscale), 28x28 grid, traces stores the spikes
 inpt = Input(784, shape=(1, 28, 28), traces = True)
-
 network.add_layer(inpt, name="I")
 
-# Reservoir layer which uses LIF nodes which are the siking neauron. the neuron will take the current, reach its limit, then spike, and then reset 
-# np.random procudices random values for each neuron, therefore the threshold will be close to -52 instead of being -52 everytime (randomness)
+# Reservoir layer - each neurons recieves a voltage, reaches threshold, spike, and resets 
+# thresh represents biologically inspired neurons
 reservoir = LIFNodes(n_neurons, traces=True, thresh = -52 + np.random.randn(n_neurons).astype(float),)
-
 network.add_layer(reservoir, name = "R")
 
-# Output layer
-# QUESTION: should there be threshold here?
-output = LIFNodes(10, traces=True)
-
+# Output layer - creates 10 neurons 
+output = LIFNodes(10, traces=True, thresh=-55)
 network.add_layer(output, name="O")
 
 # Input -> Reservoir 
@@ -117,8 +113,8 @@ C2 = MulticompartmentConnection(source = reservoir, target = reservoir, device =
 
 
 # Reservoir -> Output (STDP)
-# Reservoir -> Output (STDP)
-C3_w = 0.1 * torch.rand(reservoir.n, output.n)
+# Rand goes from 0 to 1 meaning that all the weights will be positive aka excitaory
+C3_w = 0.5 * torch.rand(reservoir.n, output.n)
 RO_weight_feature = Weight(
     name="ROweight",
     value=C3_w,
@@ -129,21 +125,18 @@ RO_weight_feature = Weight(
 pipeline = [RO_weight_feature]
 
 C3 = MulticompartmentConnection(source=reservoir, target=output, device=device, pipeline=pipeline)
-
-#DEBUG:
-print(type(RO_weight_feature.learning_rule))
 # C3 = Connection(source=reservoir,target=output,w=0.1 * torch.rand(reservoir.n, output.n),update_rule=PostPre,nu=(1e-2, 1e-2),)
 
-# DEBUG
+# DEBUG: prints the first 5 neuron weights in the 500x10 matrix 
 print("Initial C3 weights:")
 print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
 # Output -> Output (recurrent)
-inh = -10 * (torch.ones(output.n, output.n)- torch.eye(output.n))
+inh = -5 * (torch.ones(output.n, output.n)- torch.eye(output.n))
 
-weight_feature = Weight(name="output_inhibition_weight",value=inh)
-pipeline = [weight_feature]
+output_inhibition_weight_feature = Weight(name="",value=inh)
+pipeline = [output_inhibition_weight_feature]
 
 C4 = MulticompartmentConnection(source=output,target=output, device = device, pipeline = pipeline)
 # C4 = Connection(source=output,target=output,w=inh,)
@@ -199,9 +192,11 @@ dataloader = torch.utils.data.DataLoader(
 
 # Run training data on reservoir computer and store (spikes per neuron, label) per example.
 # Note: Because this is a reservoir network, no adjustments of neuron parameters occurs in this phase.
-n_iters = examples
+n_iters = examples  # 500 images 
 neuron_spike_history = []
 weight_sum_history = []
+# dataloader - holds every mnist image (image, enocded_image, label
+# (1, imag0),, etc
 pbar = tqdm(enumerate(dataloader))
 
 
@@ -218,25 +213,17 @@ for i, dataPoint in pbar:
     label = dataPoint["label"]
     pbar.set_description_str("Train progress: (%d / %d)" % (i, n_iters))
 
-    # Run network on sample image
-    # layer I for 250 timespetps 
+    # takes the spike train, datum, and feeds it into the input later 
+    # for each timestep it does this: input spikes, update reservoir neurons, reservoir neurons spike, update output neurons, output neurons spike, apply STDP to reservoir,-> output weights 
     network.run(inputs={"I": datum}, time=time)
 
 
-   
-    # --- NEW: Normalize C3 weights so no output neuron dominates ---
-    target_sum = 1.0  # tune this; try 0.5–5 depending on scale
-    with torch.no_grad():
-        col_sums = C3_w.sum(0, keepdim=True)          # sum of incoming weights per output neuron
-        col_sums[col_sums == 0] = 1                    # avoid divide-by-zero
-        C3_w *= target_sum / col_sums
 
-    # --- NEW: record per-neuron spikes and C3 weight sums this iteration ---
+    #NEW: record per-neuron spikes and C3 weight sums this iteration
     neuron_spike_history.append(spikes["O"].get("s").sum(0).squeeze().clone())
     weight_sum_history.append(C3_w.sum(0).clone())
 
-   
-       
+
     # Plot spiking activity using monitors
     if plot:
         # Plot the current image and reconstructed/encoded image
@@ -295,7 +282,8 @@ plt.title("Per-neuron C3 weight sum over training")
 plt.savefig(f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/weight_sum_job_{job_id}.png", dpi=300, bbox_inches="tight")
 plt.close()
 
-# --- NEW: Freeze STDP learning before evaluation ---
+# bc STDP is still active when i run them throguh neurons assignments + accuracy, the weights are still changing 
+# set nu to 0 so it doesnt change anymore 
 RO_weight_feature.learning_rule.nu = (0, 0)
 
 
@@ -304,9 +292,10 @@ print("After training C3 weights:")
 print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
-# --- NEW: reservoir sanity check ---
-print("Reservoir mean spikes/neuron:", spikes["R"].get("s").sum(0).float().mean().item())
+# --- NEW: reservoir sanity check --- 
+print("Reservoir mean spikes/neuron:", spikes["R"].get("s").sum(0).float().mean().item()) 
 print("Reservoir active neurons (>0 spikes):", (spikes["R"].get("s").sum(0) > 0).sum().item(), "/", n_neurons)
+
 
 # Run same simulation on reservoir with testing data instead of training data
 # (see training section for intuition)
@@ -338,7 +327,7 @@ for i, dataPoint in pbar:
         weights_im = plot_weights(get_square_weights(C1_w, 23, 28), im=weights_im, wmin=-2, wmax=2)
         #recurrent weights
         weights_im2 = plot_weights(C2_w, im=weights_im2, wmin=-2, wmax=2)
-
+        #FIX: get the rest of the connections
         plt.pause(1e-8)
     network.reset_state_variables()
 
