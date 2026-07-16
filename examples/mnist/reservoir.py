@@ -2,7 +2,6 @@ import argparse
 import os
 
 import matplotlib.pyplot as plt
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -79,7 +78,7 @@ print("Running on Device = ", device)
 network = Network(dt=dt)
 
 # Input layer
-inpt = Input(784, shape=(1, 28, 28), traces=True,)
+inpt = Input(784, shape=(1, 28, 28), traces = True)
 
 network.add_layer(inpt, name="I")
 
@@ -90,6 +89,7 @@ reservoir = LIFNodes(n_neurons, traces=True, thresh = -52 + np.random.randn(n_ne
 network.add_layer(reservoir, name = "R")
 
 # Output layer
+# QUESTION: should there be threshold here?
 output = LIFNodes(10, traces=True,)
 
 network.add_layer(output, name="O")
@@ -97,8 +97,8 @@ network.add_layer(output, name="O")
 # Input -> Reservoir 
 C1_w = 0.5 * torch.randn(inpt.n, reservoir.n)
 
-weight_feature = Weight(name="IRweight", value=C1_w)
-pipeline = [weight_feature]
+IR_weight_feature = Weight(name="IRweight", value=C1_w)
+pipeline = [IR_weight_feature]
 
 C1 = MulticompartmentConnection(source = inpt, target = reservoir, device = device, pipeline = pipeline)
 # orginal
@@ -109,19 +109,29 @@ C1 = MulticompartmentConnection(source = inpt, target = reservoir, device = devi
 # rand - biological (meaning that it shouldnt be both negative or positive)
 C2_w = 0.5 * torch.randn(reservoir.n, reservoir.n)
 
-weight_feature = Weight(name = "RRweight", value = C2_w)
-pipeline = [weight_feature]
+RR_weight_feature = Weight(name = "RRweight", value = C2_w)
+pipeline = [RR_weight_feature]
 
 C2 = MulticompartmentConnection(source = reservoir, target = reservoir, device = device, pipeline = pipeline)
 # C2 = Connection(source=reservoir,target=reservoir,w=0.5 * torch.randn(reservoir.n, reservoir.n),)
 
 
 # Reservoir -> Output (STDP)
-C3_w = 0.3 * torch.rand(reservoir.n, output.n)
-weight_feature = Weight(name="ROweight", value= C3_w, learning_rule = PostPre, nu=(1e-2,1e-2), enforce_polarity=True)
-pipeline = [weight_feature]
+# Reservoir -> Output (STDP)
+C3_w = 0.1 * torch.rand(reservoir.n, output.n)
+RO_weight_feature = Weight(
+    name="ROweight",
+    value=C3_w,
+    learning_rule=PostPre,
+    nu=(1e-2, 1e-2),
+    enforce_polarity=True,
+)
+pipeline = [RO_weight_feature]
 
-C3 = MulticompartmentConnection(source = reservoir, target = output, device = device, pipeline = pipeline)
+C3 = MulticompartmentConnection(source=reservoir, target=output, device=device, pipeline=pipeline)
+
+#DEBUG:
+print(type(RO_weight_feature.learning_rule))
 # C3 = Connection(source=reservoir,target=output,w=0.1 * torch.rand(reservoir.n, output.n),update_rule=PostPre,nu=(1e-2, 1e-2),)
 
 # DEBUG
@@ -191,12 +201,8 @@ dataloader = torch.utils.data.DataLoader(
 # Note: Because this is a reservoir network, no adjustments of neuron parameters occurs in this phase.
 n_iters = examples
 
-# data loader - takes in one MNIST sample at a time 
-# enumerate - for x in dataloader returns (index, actual item)
-# tqdm creates a prgress bar 
 pbar = tqdm(enumerate(dataloader))
-# i - because of enumerate i contains 1,2,3,4,...
-# datapoint - contains one MNIST sample 
+
 for i, dataPoint in pbar:
     if i > n_iters:
         break
@@ -213,6 +219,7 @@ for i, dataPoint in pbar:
     # Run network on sample image
     # layer I for 250 timespetps 
     network.run(inputs={"I": datum}, time=time)
+   
 
        
     # Plot spiking activity using monitors
@@ -244,8 +251,14 @@ for i, dataPoint in pbar:
         # Plot weights between output and output
         weights_im2 = plot_weights(C2_w, im=weights_im2, wmin=-2, wmax=2)
 
+        #FIX: make sure all connections are displayed 
+
         plt.pause(1e-8)
     network.reset_state_variables()
+
+# --- Freeze STDP learning before evaluation ---
+RO_weight_feature.learning_rule.nu = (0, 0)
+
 
 # DEBUG
 print("After training C3 weights:")
@@ -271,6 +284,10 @@ for i, dataPoint in pbar:
 
     #retrives rhe output spikes (250x10), sum(0) sums scross time
     print(spikes["O"].get("s").sum(0)) # important
+
+    # DEBUG: confirm C3 weights are frozen ---
+    if i % 50 == 0:
+        print(f"[iter {i}] C3_w mean: {C3_w.mean().item():.6f}")
 
     if plot:
         inpt_axes, inpt_ims = plot_input(dataPoint["image"].view(28, 28),datum.view(time, 784).sum(0).view(28, 28),label=label,axes=inpt_axes,ims=inpt_ims,)
