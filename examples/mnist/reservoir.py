@@ -22,7 +22,7 @@ from bindsnet.learning.MCC_learning import PostPre
 
 # Build a simple two-layer, input-output network.
 from bindsnet.network.monitors import Monitor
-from bindsnet.network.nodes import Input, LIFNodes
+from bindsnet.network.nodes import Input, LIFNodes, DiehlAndCookNodes
 from bindsnet.network.topology import Connection
 from bindsnet.utils import get_square_weights
 from bindsnet.network.topology import MulticompartmentConnection
@@ -90,7 +90,7 @@ network.add_layer(reservoir, name = "R")
 
 # Output layer
 # QUESTION: should there be threshold here?
-output = LIFNodes(10, traces=True,)
+output = DiehlAndCookNodes(10, traces=True)
 
 network.add_layer(output, name="O")
 
