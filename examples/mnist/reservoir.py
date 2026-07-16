@@ -220,6 +220,12 @@ for i, dataPoint in pbar:
     # layer I for 250 timespetps 
     network.run(inputs={"I": datum}, time=time)
    
+    # --- Normalize C3 weights so no output neuron dominates ---
+    target_sum = 1.0  # tune this; try 0.5–5 depending on scale
+    with torch.no_grad():
+        col_sums = C3_w.sum(0, keepdim=True)          # sum of incoming weights per output neuron
+        col_sums[col_sums == 0] = 1                    # avoid divide-by-zero
+        C3_w *= target_sum / col_sums
 
        
     # Plot spiking activity using monitors
