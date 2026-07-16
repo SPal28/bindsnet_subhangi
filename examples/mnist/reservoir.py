@@ -22,7 +22,7 @@ from bindsnet.learning.MCC_learning import PostPre
 
 # Build a simple two-layer, input-output network.
 from bindsnet.network.monitors import Monitor
-from bindsnet.network.nodes import Input, LIFNodes, DiehlAndCookNodes
+from bindsnet.network.nodes import Input, LIFNodes
 from bindsnet.network.topology import Connection
 from bindsnet.utils import get_square_weights
 from bindsnet.network.topology import MulticompartmentConnection
@@ -90,7 +90,7 @@ network.add_layer(reservoir, name = "R")
 
 # Output layer
 # QUESTION: should there be threshold here?
-output = DiehlAndCookNodes(10, traces=True)
+output = LIFNodes(10, traces=True)
 
 network.add_layer(output, name="O")
 
@@ -200,8 +200,10 @@ dataloader = torch.utils.data.DataLoader(
 # Run training data on reservoir computer and store (spikes per neuron, label) per example.
 # Note: Because this is a reservoir network, no adjustments of neuron parameters occurs in this phase.
 n_iters = examples
-
+neuron_spike_history = []
+weight_sum_history = []
 pbar = tqdm(enumerate(dataloader))
+
 
 for i, dataPoint in pbar:
     if i > n_iters:
@@ -219,14 +221,21 @@ for i, dataPoint in pbar:
     # Run network on sample image
     # layer I for 250 timespetps 
     network.run(inputs={"I": datum}, time=time)
+
+
    
-    # --- Normalize C3 weights so no output neuron dominates ---
+    # --- NEW: Normalize C3 weights so no output neuron dominates ---
     target_sum = 1.0  # tune this; try 0.5–5 depending on scale
     with torch.no_grad():
         col_sums = C3_w.sum(0, keepdim=True)          # sum of incoming weights per output neuron
         col_sums[col_sums == 0] = 1                    # avoid divide-by-zero
         C3_w *= target_sum / col_sums
 
+    # --- NEW: record per-neuron spikes and C3 weight sums this iteration ---
+    neuron_spike_history.append(spikes["O"].get("s").sum(0).squeeze().clone())
+    weight_sum_history.append(C3_w.sum(0).clone())
+
+   
        
     # Plot spiking activity using monitors
     if plot:
@@ -262,7 +271,31 @@ for i, dataPoint in pbar:
         plt.pause(1e-8)
     network.reset_state_variables()
 
-# --- Freeze STDP learning before evaluation ---
+# --- NEW: plot per-neuron spike activity and weight sums over training ---
+spike_history_tensor = torch.stack(neuron_spike_history)   # [n_iters, 10]
+weight_sum_tensor = torch.stack(weight_sum_history)         # [n_iters, 10]
+
+plt.figure()
+for neuron in range(10):
+    plt.plot(spike_history_tensor[:, neuron].numpy(), label=f"N{neuron}")
+plt.xlabel("Training iteration")
+plt.ylabel("Spikes per example")
+plt.legend(fontsize=6)
+plt.title("Per-neuron spiking activity over training")
+plt.savefig(f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/spike_activity_job_{job_id}.png", dpi=300, bbox_inches="tight")
+plt.close()
+
+plt.figure()
+for neuron in range(10):
+    plt.plot(weight_sum_tensor[:, neuron].numpy(), label=f"N{neuron}")
+plt.xlabel("Training iteration")
+plt.ylabel("Sum of incoming C3 weights")
+plt.legend(fontsize=6)
+plt.title("Per-neuron C3 weight sum over training")
+plt.savefig(f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/weight_sum_job_{job_id}.png", dpi=300, bbox_inches="tight")
+plt.close()
+
+# --- NEW: Freeze STDP learning before evaluation ---
 RO_weight_feature.learning_rule.nu = (0, 0)
 
 
@@ -271,6 +304,9 @@ print("After training C3 weights:")
 print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
+# --- NEW: reservoir sanity check ---
+print("Reservoir mean spikes/neuron:", spikes["R"].get("s").sum(0).float().mean().item())
+print("Reservoir active neurons (>0 spikes):", (spikes["R"].get("s").sum(0) > 0).sum().item(), "/", n_neurons)
 
 # Run same simulation on reservoir with testing data instead of training data
 # (see training section for intuition)
@@ -451,3 +487,6 @@ plt.grid(True)
 accuracy_path = f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/accuracy_job_{job_id}.png"
 plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
 plt.close()
+
+
+
