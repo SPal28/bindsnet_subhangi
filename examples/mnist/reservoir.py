@@ -196,7 +196,7 @@ n_iters = examples  # 500 images
 neuron_spike_history = []
 weight_sum_history = []
 
-training_pairs = []
+r_training_pairs = []
 # dataloader - holds every mnist image (image, enocded_image, label
 # (1, imag0),, etc
 pbar = tqdm(enumerate(dataloader))
@@ -226,12 +226,12 @@ for i, dataPoint in pbar:
     weight_sum_history.append(C3_w.sum(0).clone())
 
     # NEW: save output spike trains for logistic regression
-    training_pairs.append(
-        (
-            spikes["O"].get("s").clone(),
-            label.clone()
-        )
+    r_training_pairs.append(
+    (
+        spikes["R"].get("s").clone(),
+        label.clone()
     )
+    )   
 
 
     # Plot spiking activity using monitors
@@ -268,10 +268,10 @@ for i, dataPoint in pbar:
         plt.pause(1e-8)
     network.reset_state_variables()
 
-print("Number of training pairs:", len(training_pairs))
-print("Spike tensor shape:", training_pairs[0][0].shape)
-print("First label:", training_pairs[0][1].item())
-print("First sample spike counts:", training_pairs[0][0].sum(0))
+print("Number of training pairs:", len(r_training_pairs))
+print("Spike tensor shape:", r_training_pairs[0][0].shape)
+print("First label:", r_training_pairs[0][1].item())
+print("First sample spike counts:", r_training_pairs[0][0].sum(0))
 
 # --- NEW: plot per-neuron spike activity and weight sums over training ---
 spike_history_tensor = torch.stack(neuron_spike_history)   # [n_iters, 10]
@@ -312,13 +312,13 @@ class NN(nn.Module):
         return torch.sigmoid(self.linear(x))
     
 lr_epochs = 100
-model = NN(time * 10, 10).to(device)
+model = NN(time * n_neurons, 10).to(device)
 criterion = torch.nn.MSELoss(reduction="sum")
 optimizer = torch.optim.SGD(model.parameters(), lr=1e-4, momentum=0.9)
 
 for epoch in range(lr_epochs):
     avg_loss = 0
-    for spikes_train, label in training_pairs:
+    for spikes_train, label in r_training_pairs:
         optimizer.zero_grad()
         outputs = model(spikes_train)
         target = torch.zeros(10, device=device)
@@ -328,7 +328,7 @@ for epoch in range(lr_epochs):
         loss.backward()
         optimizer.step()
     print(f"Epoch {epoch+1}/{lr_epochs}: "
-          f"{avg_loss/len(training_pairs):.4f}")
+          f"{avg_loss/len(r_training_pairs):.4f}")
 
 # DEBUG
 print("After training C3 weights:")
@@ -413,10 +413,10 @@ for i, dataPoint in pbar:
     network.run(inputs={"I": datum}, time=time)
 
     # Get output spikes
-    output_spikes = spikes["O"].get("s")
+    reservoir_spikes = spikes["R"].get("s")
 
     # Logistic regression prediction
-    outputs = model(output_spikes)
+    outputs = model(reservoir_spikes)
 
     prediction = outputs.argmax().item()
 
