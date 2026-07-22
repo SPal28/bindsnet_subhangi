@@ -302,6 +302,34 @@ plt.close()
 RO_weight_feature.learning_rule.nu = (0, 0)
 
 
+class NN(nn.Module):
+    def __init__(self, input_size, num_classes):
+        super(NN, self).__init__()
+        self.linear = nn.Linear(input_size, num_classes)
+
+    def forward(self, x):
+        x = x.float().view(-1)
+        return torch.sigmoid(self.linear(x))
+    
+lr_epochs = 100
+model = NN(time * 10, 10).to(device)
+criterion = torch.nn.MSELoss(reduction="sum")
+optimizer = torch.optim.SGD(model.parameters(), lr=1e-4, momentum=0.9)
+
+for epoch in range(lr_epochs):
+    avg_loss = 0
+    for spikes_train, label in training_pairs:
+        optimizer.zero_grad()
+        outputs = model(spikes_train)
+        target = torch.zeros(10, device=device)
+        target[label.item()] = 1
+        loss = criterion(outputs, target)
+        avg_loss += loss.item()
+        loss.backward()
+        optimizer.step()
+    print(f"Epoch {epoch+1}/{lr_epochs}: "
+          f"{avg_loss/len(training_pairs):.4f}")
+
 # DEBUG
 print("After training C3 weights:")
 print(C3_w[:5])
@@ -348,53 +376,12 @@ for i, dataPoint in pbar:
 
 
 
-#creates empty tensor with 10 zero avlues 
-assignments = torch.zeros(10, dtype=torch.long)
-
-# proportions[output neuron][digit]
-# creates a 10x10 matrix (digits x neurons num) tp track how many spikes each neuron porduces when seeing each digit
-proportions = torch.zeros(10, 10)
-
-
-# Run training images through the trained network
-# to determine what digit each neuron represents
-for i, dataPoint in enumerate(dataloader):
-
-    if i > n_iters:
-        break
-
-    # preprocess image ( shapes the image to what bindsnet expects)
-    datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
-
-    #retrives the tru digital label
-    label = dataPoint["label"]
-
-    # run network
-    network.run(inputs={"I": datum},time=time,)
-
-   
-    # count output spikes for each neuron
-    # RuntimeError: output with shape [10] doesn't match the broadcast shape [1, 10] --> need squeeze
-    spike_counts = spikes["O"].get("s").sum(0).squeeze()
-
-
-    # Add spike counts to the corresponding digit
-    # label.item() gives the true digit (0-9)
-    # supposed label = 7 and spike_counts = {1,2,4,,6,7,83,}.... then proprotions gets updated neuron __ got __ spieks for digit __
-    proportions[:, label.item()] += spike_counts
-
-
-    network.reset_state_variables()
 
 
 
-#assigns each output neuron the digit it responded to most
-for neuron in range(10):
-    assignments[neuron] = torch.argmax(proportions[neuron])
 
 
-print("Neuron assignments:")
-print(assignments)
+
 
 
 acc_history = []
@@ -415,50 +402,39 @@ for i, dataPoint in pbar:
     if i > n_iters:
         break
 
-
-    # preprocess image
-    datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
+    # Prepare image
+    datum = dataPoint["encoded_image"].view(
+        int(time / dt), 1, 1, 28, 28
+    ).to(device)
 
     label = dataPoint["label"]
 
+    # Run SNN
+    network.run(inputs={"I": datum}, time=time)
 
-    # run network
-    network.run(
-        inputs={"I": datum},time=time,)
-
-
-    # get output spikes
+    # Get output spikes
     output_spikes = spikes["O"].get("s")
 
-    spike_counts = output_spikes.sum(0)
+    # Logistic regression prediction
+    outputs = model(output_spikes)
 
-
-    # Find neuron with the most spikes
-    winning_neuron = spike_counts.argmax().item()
-
-
-    # Convert neuron ID into digit label
-    prediction = assignments[winning_neuron].item()
-
-
-    total += 1
+    prediction = outputs.argmax().item()
 
     true_label = label.item()
-    pred_label = prediction
+
+    total += 1
 
     if prediction == true_label:
         correct += 1
 
-    conf_matrix[true_label, pred_label] += 1
+    conf_matrix[true_label, prediction] += 1
 
     running_acc = correct / total
 
-    # store values for plotting
     acc_history.append(running_acc)
     iter_history.append(i)
 
     network.reset_state_variables()
-
 
 
 print("\nAccuracy: %.2f %%" % (100.0 * correct / total))
