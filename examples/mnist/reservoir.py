@@ -381,6 +381,47 @@ for neuron in range(10):
 print("Neuron assignments:")
 print(assignments)
 
+##############################################################
+# READOUT METHODS
+##############################################################
+
+def winner_take_all_decoder(output_spikes, assignments):
+    spike_counts = output_spikes.sum(0)
+
+    winning_neuron = spike_counts.argmax().item()
+
+    return assignments[winning_neuron].item()
+
+
+def first_spike_decoder(output_spikes, assignments):
+
+    for t in range(output_spikes.shape[0]):
+
+        spiking = torch.where(output_spikes[t] > 0)[0]
+
+        if len(spiking) > 0:
+
+            first_neuron = spiking[0].item()
+
+            return assignments[first_neuron].item()
+
+    # fallback if nothing spikes
+    return winner_take_all_decoder(output_spikes, assignments)
+
+
+def threshold_decoder(output_spikes, assignments, threshold=2):
+
+    spike_counts = output_spikes.sum(0)
+
+    above_threshold = torch.where(spike_counts >= threshold)[0]
+
+    if len(above_threshold) > 0:
+
+        neuron = above_threshold[0].item()
+
+        return assignments[neuron].item()
+
+    return winner_take_all_decoder(output_spikes, assignments)
 
 acc_history = []
 iter_history = []
@@ -412,39 +453,10 @@ for i, dataPoint in pbar:
         inputs={"I": datum},time=time,)
 
 
-    output_spikes = spikes["O"].get("s")   # shape: [time, 10]
 
-prediction = None
+output_spikes = spikes["O"].get("s")
 
-# Search through time until the first output spike occurs
-for t in range(output_spikes.shape[0]):
-
-    spiking = torch.where(output_spikes[t] > 0)[0]
-
-    if len(spiking) > 0:
-
-        # if several neurons spike simultaneously,
-        # just choose the first one
-        first_neuron = spiking[0].item()
-
-        prediction = assignments[first_neuron].item()
-
-        print("First neuron:", first_neuron)
-        print("Assigned digit:", assignments[first_neuron])
-        print("True digit:", label.item())
-
-        break
-
-    
-
-# If nothing spikes, fall back to winner-take-all
-if prediction is None:
-
-    spike_counts = output_spikes.sum(0)
-
-    winning_neuron = spike_counts.argmax().item()
-
-    prediction = assignments[winning_neuron].item()
+prediction = first_spike_decoder(output_spikes, assignments)
 
 
 total += 1
