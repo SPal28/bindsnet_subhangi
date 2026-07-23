@@ -456,7 +456,7 @@ for i, dataPoint in pbar:
 
     output_spikes = spikes["O"].get("s")
 
-    prediction = winner_take_all_decoder(output_spikes, assignments)
+    prediction = first_spike_decoder(output_spikes, assignments)
 
 
     total += 1
