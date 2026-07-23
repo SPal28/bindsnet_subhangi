@@ -454,28 +454,28 @@ for i, dataPoint in pbar:
 
 
 
-output_spikes = spikes["O"].get("s")
+    output_spikes = spikes["O"].get("s")
 
-prediction = winner_take_all_decoder(output_spikes, assignments)
+    prediction = winner_take_all_decoder(output_spikes, assignments)
 
 
-total += 1
+    total += 1
 
-true_label = label.item()
-pred_label = prediction
+    true_label = label.item()
+    pred_label = prediction
 
-if prediction == true_label:
-    correct += 1
+    if prediction == true_label:
+        correct += 1
 
-conf_matrix[true_label, pred_label] += 1
+    conf_matrix[true_label, pred_label] += 1
 
-running_acc = correct / total
+    running_acc = correct / total
 
-# store values for plotting
-acc_history.append(running_acc)
-iter_history.append(i)
+    # store values for plotting
+    acc_history.append(running_acc)
+    iter_history.append(i)
 
-network.reset_state_variables()
+    network.reset_state_variables()
 
 
 
