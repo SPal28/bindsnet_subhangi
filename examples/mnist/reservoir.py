@@ -87,7 +87,7 @@ reservoir = LIFNodes(n_neurons, traces=True, thresh = -52 + np.random.randn(n_ne
 network.add_layer(reservoir, name = "R")
 
 # Output layer - creates 10 neurons 
-output = LIFNodes(10, traces=True, thresh=-55)
+output = LIFNodes(10, traces=True)
 network.add_layer(output, name="O")
 
 # Input -> Reservoir 
@@ -128,7 +128,7 @@ C3 = MulticompartmentConnection(source=reservoir, target=output, device=device, 
 # C3 = Connection(source=reservoir,target=output,w=0.1 * torch.rand(reservoir.n, output.n),update_rule=PostPre,nu=(1e-2, 1e-2),)
 
 # DEBUG: prints the first 5 neuron weights in the 500x10 matrix 
-print("Initial C3 weights:")
+print("Initial C3 Outgoing weights:")
 print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
@@ -193,10 +193,7 @@ dataloader = torch.utils.data.DataLoader(
 # Run training data on reservoir computer and store (spikes per neuron, label) per example.
 # Note: Because this is a reservoir network, no adjustments of neuron parameters occurs in this phase.
 n_iters = examples  # 500 images 
-neuron_spike_history = []
-weight_sum_history = []
 
-r_training_pairs = []
 # dataloader - holds every mnist image (image, enocded_image, label
 # (1, imag0),, etc
 pbar = tqdm(enumerate(dataloader))
@@ -219,20 +216,17 @@ for i, dataPoint in pbar:
     # for each timestep it does this: input spikes, update reservoir neurons, reservoir neurons spike, update output neurons, output neurons spike, apply STDP to reservoir,-> output weights 
     network.run(inputs={"I": datum}, time=time)
 
+    if i % 50 == 0:
+        print(f"\nIteration {i}")
 
-
-    #NEW: record per-neuron spikes and C3 weight sums this iteration
-    neuron_spike_history.append(spikes["O"].get("s").sum(0).squeeze().clone())
-    weight_sum_history.append(C3_w.sum(0).clone())
-
-    # NEW: save output spike trains for logistic regression
-    r_training_pairs.append(
-    (
-        spikes["R"].get("s").clone(),
-        label.clone()
-    )
-    )   
-
+        for neuron in range(10):
+            print(
+                f"Output neuron {neuron}: "
+                f"mean={C3_w[:, neuron].mean():.4f}, "
+                f"max={C3_w[:, neuron].max():.4f}, "
+                f"min={C3_w[:, neuron].min():.4f}"
+            )
+    
 
     # Plot spiking activity using monitors
     if plot:
@@ -268,76 +262,17 @@ for i, dataPoint in pbar:
         plt.pause(1e-8)
     network.reset_state_variables()
 
-print("Number of training pairs:", len(r_training_pairs))
-print("Spike tensor shape:", r_training_pairs[0][0].shape)
-print("First label:", r_training_pairs[0][1].item())
-print("First sample spike counts:", r_training_pairs[0][0].sum(0))
-
-# --- NEW: plot per-neuron spike activity and weight sums over training ---
-spike_history_tensor = torch.stack(neuron_spike_history)   # [n_iters, 10]
-weight_sum_tensor = torch.stack(weight_sum_history)         # [n_iters, 10]
-
-plt.figure()
-for neuron in range(10):
-    plt.plot(spike_history_tensor[:, neuron].numpy(), label=f"N{neuron}")
-plt.xlabel("Training iteration")
-plt.ylabel("Spikes per example")
-plt.legend(fontsize=6)
-plt.title("Per-neuron spiking activity over training")
-plt.savefig(f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/spike_activity_job_{job_id}.png", dpi=300, bbox_inches="tight")
-plt.close()
-
-plt.figure()
-for neuron in range(10):
-    plt.plot(weight_sum_tensor[:, neuron].numpy(), label=f"N{neuron}")
-plt.xlabel("Training iteration")
-plt.ylabel("Sum of incoming C3 weights")
-plt.legend(fontsize=6)
-plt.title("Per-neuron C3 weight sum over training")
-plt.savefig(f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/weight_sum_job_{job_id}.png", dpi=300, bbox_inches="tight")
-plt.close()
 
 # bc STDP is still active when i run them throguh neurons assignments + accuracy, the weights are still changing 
 # set nu to 0 so it doesnt change anymore 
-RO_weight_feature.learning_rule.nu = (0, 0)
+#RO_weight_feature.learning_rule.nu = (0, 0)
 
-
-class NN(nn.Module):
-    def __init__(self, input_size, num_classes):
-        super(NN, self).__init__()
-        self.linear = nn.Linear(input_size, num_classes)
-
-    def forward(self, x):
-        x = x.float().view(-1)
-        return torch.sigmoid(self.linear(x))
-    
-lr_epochs = 100
-model = NN(time * n_neurons, 10).to(device)
-criterion = torch.nn.MSELoss(reduction="sum")
-optimizer = torch.optim.SGD(model.parameters(), lr=1e-4, momentum=0.9)
-
-for epoch in range(lr_epochs):
-    avg_loss = 0
-    for spikes_train, label in r_training_pairs:
-        optimizer.zero_grad()
-        outputs = model(spikes_train)
-        target = torch.zeros(10, device=device)
-        target[label.item()] = 1
-        loss = criterion(outputs, target)
-        avg_loss += loss.item()
-        loss.backward()
-        optimizer.step()
-    print(f"Epoch {epoch+1}/{lr_epochs}: "
-          f"{avg_loss/len(r_training_pairs):.4f}")
 
 # DEBUG
-print("After training C3 weights:")
+print("After training C3 outgoing weights:")
 print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
-# --- NEW: reservoir sanity check --- 
-print("Reservoir mean spikes/neuron:", spikes["R"].get("s").sum(0).float().mean().item()) 
-print("Reservoir active neurons (>0 spikes):", (spikes["R"].get("s").sum(0) > 0).sum().item(), "/", n_neurons)
 
 
 # Run same simulation on reservoir with testing data instead of training data
@@ -359,10 +294,7 @@ for i, dataPoint in pbar:
     #retrives rhe output spikes (250x10), sum(0) sums scross time
     print(spikes["O"].get("s").sum(0)) # important
 
-    # DEBUG: confirm C3 weights are frozen ---
-    if i % 50 == 0:
-        print(f"[iter {i}] C3_w mean: {C3_w.mean().item():.6f}")
-
+   
     if plot:
         inpt_axes, inpt_ims = plot_input(dataPoint["image"].view(28, 28),datum.view(time, 784).sum(0).view(28, 28),label=label,axes=inpt_axes,ims=inpt_ims,)
         spike_ims, spike_axes = plot_spikes({layer: spikes[layer].get("s").view(time, -1) for layer in spikes},axes=spike_axes,ims=spike_ims,)
@@ -376,13 +308,95 @@ for i, dataPoint in pbar:
 
 
 
+#creates empty tensor with 10 zero avlues 
+assignments = torch.zeros(10, dtype=torch.long)
+
+# proportions[output neuron][digit]
+# creates a 10x10 matrix (digits x neurons num) tp track how many spikes each neuron porduces when seeing each digit
+proportions = torch.zeros(10, 10)
+
+
+# Run training images through the trained network
+# to determine what digit each neuron represents
+for i, dataPoint in enumerate(dataloader):
+
+    if i > n_iters:
+        break
+
+    # preprocess image ( shapes the image to what bindsnet expects)
+    datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
+
+    #retrives the tru digital label
+    label = dataPoint["label"]
+
+    # run network
+    network.run(inputs={"I": datum},time=time,)
+
+   
+    # count output spikes for each neuron
+    # RuntimeError: output with shape [10] doesn't match the broadcast shape [1, 10] --> need squeeze
+    spike_counts = spikes["O"].get("s").sum(0).squeeze()
+
+
+    # Add spike counts to the corresponding digit
+    # label.item() gives the true digit (0-9)
+    # supposed label = 7 and spike_counts = {1,2,4,,6,7,83,}.... then proprotions gets updated neuron __ got __ spieks for digit __
+    proportions[:, label.item()] += spike_counts
+
+
+    network.reset_state_variables()
 
 
 
+#assigns each output neuron the digit it responded to most
+for neuron in range(10):
+    assignments[neuron] = torch.argmax(proportions[neuron])
 
 
+print("Neuron assignments:")
+print(assignments)
+
+##############################################################
+# READOUT METHODS
+##############################################################
+
+def winner_take_all_decoder(output_spikes, assignments):
+    spike_counts = output_spikes.sum(0)
+
+    winning_neuron = spike_counts.argmax().item()
+
+    return assignments[winning_neuron].item()
 
 
+def first_spike_decoder(output_spikes, assignments):
+
+    for t in range(output_spikes.shape[0]):
+
+        spiking = torch.where(output_spikes[t] > 0)[0]
+
+        if len(spiking) > 0:
+
+            first_neuron = spiking[0].item()
+
+            return assignments[first_neuron].item()
+
+    # fallback if nothing spikes
+    return winner_take_all_decoder(output_spikes, assignments)
+
+
+def threshold_decoder(output_spikes, assignments, threshold=2):
+
+    spike_counts = output_spikes.sum(0)
+
+    above_threshold = torch.where(spike_counts >= threshold)[0]
+
+    if len(above_threshold) > 0:
+
+        neuron = above_threshold[0].item()
+
+        return assignments[neuron].item()
+
+    return winner_take_all_decoder(output_spikes, assignments)
 
 acc_history = []
 iter_history = []
@@ -402,39 +416,42 @@ for i, dataPoint in pbar:
     if i > n_iters:
         break
 
-    # Prepare image
-    datum = dataPoint["encoded_image"].view(
-        int(time / dt), 1, 1, 28, 28
-    ).to(device)
+
+    # preprocess image
+    datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
 
     label = dataPoint["label"]
 
-    # Run SNN
-    network.run(inputs={"I": datum}, time=time)
 
-    # Get output spikes
-    reservoir_spikes = spikes["R"].get("s")
+    # run network
+    network.run(
+        inputs={"I": datum},time=time,)
 
-    # Logistic regression prediction
-    outputs = model(reservoir_spikes)
 
-    prediction = outputs.argmax().item()
 
-    true_label = label.item()
+    output_spikes = spikes["O"].get("s")
+
+    prediction = winner_take_all_decoder(output_spikes, assignments)
+
 
     total += 1
+
+    true_label = label.item()
+    pred_label = prediction
 
     if prediction == true_label:
         correct += 1
 
-    conf_matrix[true_label, prediction] += 1
+    conf_matrix[true_label, pred_label] += 1
 
     running_acc = correct / total
 
+    # store values for plotting
     acc_history.append(running_acc)
     iter_history.append(i)
 
     network.reset_state_variables()
+
 
 
 print("\nAccuracy: %.2f %%" % (100.0 * correct / total))
