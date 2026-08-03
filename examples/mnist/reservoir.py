@@ -83,7 +83,7 @@ network.add_layer(inpt, name="I")
 
 # Reservoir layer - each neurons recieves a voltage, reaches threshold, spike, and resets 
 # thresh represents biologically inspired neurons
-reservoir = LIFNodes(n_neurons, traces=True, thresh = -50 + np.random.randn(n_neurons).astype(float),)
+reservoir = LIFNodes(n_neurons, traces=True, thresh = -48 + np.random.randn(n_neurons).astype(float),)
 network.add_layer(reservoir, name = "R")
 
 # Output layer - creates 10 neurons 
