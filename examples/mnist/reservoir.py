@@ -120,7 +120,7 @@ RO_weight_feature = Weight(
     value=C3_w,
     learning_rule=PostPre,
     nu=(1e-2, 1e-2),
-    enforce_polarity=True,
+    enforce_polarity=False,
 )
 pipeline = [RO_weight_feature]
 
@@ -133,7 +133,7 @@ print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
 # Output -> Output (recurrent)
-inh = -5 * (torch.ones(output.n, output.n)- torch.eye(output.n))
+inh = -10 * (torch.ones(output.n, output.n)- torch.eye(output.n))
 
 output_inhibition_weight_feature = Weight(name="",value=inh)
 pipeline = [output_inhibition_weight_feature]
@@ -291,8 +291,40 @@ for i, dataPoint in pbar:
 
     
 
-    #retrives rhe output spikes (250x10), sum(0) sums scross time
-    print(spikes["O"].get("s").sum(0)) # important
+    # ---------------------------------------------
+    # Reservoir statistics
+    # ---------------------------------------------
+    reservoir_spikes = spikes["R"].get("s")          # (time x 500)
+    reservoir_counts = reservoir_spikes.sum(0)       # spikes per reservoir neuron
+
+    active_reservoir = (reservoir_counts > 0).sum().item()
+    total_reservoir_spikes = reservoir_counts.sum().item()
+
+    # ---------------------------------------------
+    # Output statistics
+    # ---------------------------------------------
+    output_spikes = spikes["O"].get("s")             # (time x 10)
+    output_counts = output_spikes.sum(0).squeeze()   # spikes per output neuron
+
+    active_output = (output_counts > 0).sum().item()
+
+    sorted_counts, _ = torch.sort(output_counts, descending=True)
+    winner_spikes = sorted_counts[0].item()
+    runnerup_spikes = sorted_counts[1].item()
+
+    # ---------------------------------------------
+    # Print results
+    # ---------------------------------------------
+    print(f"\nImage {i}")
+    print(f"Reservoir active neurons : {active_reservoir}/500")
+    print(f"Reservoir total spikes   : {total_reservoir_spikes}")
+    print(f"Average spikes per active reservoir neuron : " f"{total_reservoir_spikes / max(active_reservoir,1):.2f}")
+
+    print(f"Output active neurons    : {active_output}/10")
+    print(f"Winner spike count       : {winner_spikes}")
+    print(f"Runner-up spike count    : {runnerup_spikes}")
+
+    print("Output spike counts:", output_counts)
 
    
     if plot:
