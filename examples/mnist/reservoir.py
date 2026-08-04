@@ -41,7 +41,7 @@ parser.add_argument("--progress_interval", type=int, default=10)
 parser.add_argument("--update_interval", type=int, default=250)
 parser.add_argument("--plot", dest="plot", action="store_true")
 parser.add_argument("--gpu", dest="gpu", action="store_true")
-parser.set_defaults(plot=True, gpu=False, train=True)
+parser.set_defaults(plot=False, gpu=False, train=True)
 
 args = parser.parse_args()
 
@@ -128,9 +128,9 @@ C3 = MulticompartmentConnection(source=reservoir, target=output, device=device, 
 # C3 = Connection(source=reservoir,target=output,w=0.1 * torch.rand(reservoir.n, output.n),update_rule=PostPre,nu=(1e-2, 1e-2),)
 
 # DEBUG: prints the first 5 neuron weights in the 500x10 matrix 
-print("Initial C3 Outgoing weights:")
-print(C3_w[:5])
-print("Mean C3 weight:", C3_w.mean())
+# print("Initial C3 Outgoing weights:")
+# print(C3_w[:5])
+# print("Mean C3 weight:", C3_w.mean())
 
 # Output -> Output (recurrent)
 inh = -20 * (torch.ones(output.n, output.n)- torch.eye(output.n))
@@ -192,7 +192,10 @@ dataloader = torch.utils.data.DataLoader(
 
 # Run training data on reservoir computer and store (spikes per neuron, label) per example.
 # Note: Because this is a reservoir network, no adjustments of neuron parameters occurs in this phase.
-n_iters = examples  # 500 images 
+n_iters = examples  # 500 images
+
+reservoir_response = torch.zeros(10, n_neurons)
+digit_counts = torch.zeros(10)
 
 # dataloader - holds every mnist image (image, enocded_image, label
 # (1, imag0),, etc
@@ -216,16 +219,24 @@ for i, dataPoint in pbar:
     # for each timestep it does this: input spikes, update reservoir neurons, reservoir neurons spike, update output neurons, output neurons spike, apply STDP to reservoir,-> output weights 
     network.run(inputs={"I": datum}, time=time)
 
-    if i % 50 == 0:
-        print(f"\nIteration {i}")
 
-        for neuron in range(10):
-            print(
-                f"Output neuron {neuron}: "
-                f"mean={C3_w[:, neuron].mean():.4f}, "
-                f"max={C3_w[:, neuron].max():.4f}, "
-                f"min={C3_w[:, neuron].min():.4f}"
-            )
+    reservoir_counts = spikes["R"].get("s").sum(0).squeeze()
+
+    digit = label.item()
+
+    reservoir_response[digit] += reservoir_counts
+    digit_counts[digit] += 1
+
+    # if i % 50 == 0:
+    #     print(f"\nIteration {i}")
+
+    #     for neuron in range(10):
+    #         print(
+    #             f"Output neuron {neuron}: "
+    #             f"mean={C3_w[:, neuron].mean():.4f}, "
+    #             f"max={C3_w[:, neuron].max():.4f}, "
+    #             f"min={C3_w[:, neuron].min():.4f}"
+    #         )
     
 
     # Plot spiking activity using monitors
@@ -263,264 +274,223 @@ for i, dataPoint in pbar:
     network.reset_state_variables()
 
 
+
+
+
 # bc STDP is still active when i run them throguh neurons assignments + accuracy, the weights are still changing 
 # set nu to 0 so it doesnt change anymore 
 #RO_weight_feature.learning_rule.nu = (0, 0)
 
 
 # DEBUG
-print("After training C3 outgoing weights:")
-print(C3_w[:5])
-print("Mean C3 weight:", C3_w.mean())
+# print("After training C3 outgoing weights:")
+# print(C3_w[:5])
+# print("Mean C3 weight:", C3_w.mean())
 
 
 
 # Run same simulation on reservoir with testing data instead of training data
 # (see training section for intuition)
-n_iters = examples
+# n_iters = examples
 
-pbar = tqdm(enumerate(dataloader))
-for i, dataPoint in pbar:
-    if i > n_iters:
-        break
-    datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
-    label = dataPoint["label"]
-    pbar.set_description_str("Testing progress: (%d / %d)" % (i, n_iters))
+# pbar = tqdm(enumerate(dataloader))
+# for i, dataPoint in pbar:
+#     if i > n_iters:
+#         break
+#     datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
+#     label = dataPoint["label"]
+#     pbar.set_description_str("Testing progress: (%d / %d)" % (i, n_iters))
 
-    network.run(inputs={"I": datum}, time=time)
+#     network.run(inputs={"I": datum}, time=time)
 
     
 
-    # ---------------------------------------------
-    # Reservoir statistics
-    # ---------------------------------------------
-    reservoir_spikes = spikes["R"].get("s")          # (time x 500)
-    reservoir_counts = reservoir_spikes.sum(0)       # spikes per reservoir neuron
+#     # ---------------------------------------------
+#     # Reservoir statistics
+#     # ---------------------------------------------
+#     reservoir_spikes = spikes["R"].get("s")          # (time x 500)
+#     reservoir_counts = reservoir_spikes.sum(0)       # spikes per reservoir neuron
 
-    active_reservoir = (reservoir_counts > 0).sum().item()
-    total_reservoir_spikes = reservoir_counts.sum().item()
+#     active_reservoir = (reservoir_counts > 0).sum().item()
+#     total_reservoir_spikes = reservoir_counts.sum().item()
 
-    # ---------------------------------------------
-    # Output statistics
-    # ---------------------------------------------
-    output_spikes = spikes["O"].get("s")             # (time x 10)
-    output_counts = output_spikes.sum(0).squeeze()   # spikes per output neuron
+#     # ---------------------------------------------
+#     # Output statistics
+#     # ---------------------------------------------
+#     output_spikes = spikes["O"].get("s")             # (time x 10)
+#     output_counts = output_spikes.sum(0).squeeze()   # spikes per output neuron
 
-    active_output = (output_counts > 0).sum().item()
+#     active_output = (output_counts > 0).sum().item()
 
-    sorted_counts, _ = torch.sort(output_counts, descending=True)
-    winner_spikes = sorted_counts[0].item()
-    runnerup_spikes = sorted_counts[1].item()
+#     sorted_counts, _ = torch.sort(output_counts, descending=True)
+#     winner_spikes = sorted_counts[0].item()
+#     runnerup_spikes = sorted_counts[1].item()
 
-    # ---------------------------------------------
-    # Print results
-    # ---------------------------------------------
-    print(f"\nImage {i}")
-    print(f"Reservoir active neurons : {active_reservoir}/500")
-    print(f"Reservoir total spikes   : {total_reservoir_spikes}")
-    print(f"Average spikes per active reservoir neuron : " f"{total_reservoir_spikes / max(active_reservoir,1):.2f}")
+#     # ---------------------------------------------
+#     # Print results
+#     # ---------------------------------------------
+#     print(f"\nImage {i}")
+#     print(f"Reservoir active neurons : {active_reservoir}/500")
+#     print(f"Reservoir total spikes   : {total_reservoir_spikes}")
+#     print(f"Average spikes per active reservoir neuron : " f"{total_reservoir_spikes / max(active_reservoir,1):.2f}")
 
-    print(f"Output active neurons    : {active_output}/10")
-    print(f"Winner spike count       : {winner_spikes}")
-    print(f"Runner-up spike count    : {runnerup_spikes}")
+#     print(f"Output active neurons    : {active_output}/10")
+#     print(f"Winner spike count       : {winner_spikes}")
+#     print(f"Runner-up spike count    : {runnerup_spikes}")
 
-    print("Output spike counts:", output_counts)
-
-   
-    if plot:
-        inpt_axes, inpt_ims = plot_input(dataPoint["image"].view(28, 28),datum.view(time, 784).sum(0).view(28, 28),label=label,axes=inpt_axes,ims=inpt_ims,)
-        spike_ims, spike_axes = plot_spikes({layer: spikes[layer].get("s").view(time, -1) for layer in spikes},axes=spike_axes,ims=spike_ims,)
-        voltage_ims, voltage_axes = plot_voltages({layer: voltages[layer].get("v").view(time, -1) for layer in voltages},ims=voltage_ims,axes=voltage_axes,)
-        weights_im = plot_weights(get_square_weights(C1_w, 23, 28), im=weights_im, wmin=-2, wmax=2)
-        #recurrent weights
-        weights_im2 = plot_weights(C2_w, im=weights_im2, wmin=-2, wmax=2)
-        #FIX: get the rest of the connections
-        plt.pause(1e-8)
-    network.reset_state_variables()
-
-
-
-#creates empty tensor with 10 zero avlues 
-assignments = torch.zeros(10, dtype=torch.long)
-
-# proportions[output neuron][digit]
-# creates a 10x10 matrix (digits x neurons num) tp track how many spikes each neuron porduces when seeing each digit
-# reservoir_response[digit][reservoir neuron]
-reservoir_response = torch.zeros(10, n_neurons)
-
-# Number of examples seen for each digit
-digit_counts = torch.zeros(10)
-
-
-# Run training images through the trained network
-# to determine what digit each neuron represents
-for i, dataPoint in enumerate(dataloader):
-
-    if i > n_iters:
-        break
-
-    # preprocess image ( shapes the image to what bindsnet expects)
-    datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
-
-    #retrives the tru digital label
-    label = dataPoint["label"]
-
-    # run network
-    network.run(inputs={"I": datum},time=time,)
+#     print("Output spike counts:", output_counts)
 
    
-    # Count reservoir spikes (500 neurons)
-    reservoir_counts = spikes["R"].get("s").sum(0).squeeze()
+#     if plot:
+#         inpt_axes, inpt_ims = plot_input(dataPoint["image"].view(28, 28),datum.view(time, 784).sum(0).view(28, 28),label=label,axes=inpt_axes,ims=inpt_ims,)
+#         spike_ims, spike_axes = plot_spikes({layer: spikes[layer].get("s").view(time, -1) for layer in spikes},axes=spike_axes,ims=spike_ims,)
+#         voltage_ims, voltage_axes = plot_voltages({layer: voltages[layer].get("v").view(time, -1) for layer in voltages},ims=voltage_ims,axes=voltage_axes,)
+#         weights_im = plot_weights(get_square_weights(C1_w, 23, 28), im=weights_im, wmin=-2, wmax=2)
+#         #recurrent weights
+#         weights_im2 = plot_weights(C2_w, im=weights_im2, wmin=-2, wmax=2)
+#         #FIX: get the rest of the connections
+#         plt.pause(1e-8)
+#     network.reset_state_variables()
 
-    digit = label.item()
-
-    # Add this image's spike counts
-    reservoir_response[digit] += reservoir_counts
-
-    # Count how many examples of this digit we've seen
-    digit_counts[digit] += 1
 
 
-    network.reset_state_variables()
+
+
+
+
+
+# ##############################################################
+# # READOUT METHODS
+# ##############################################################
+
+# def winner_take_all_decoder(output_spikes, assignments):
+#     spike_counts = output_spikes.sum(0)
+
+#     winning_neuron = spike_counts.argmax().item()
+
+#     return assignments[winning_neuron].item()
+
+
+# def first_spike_decoder(output_spikes, assignments):
+
+#     for t in range(output_spikes.shape[0]):
+
+#         spiking = torch.where(output_spikes[t] > 0)[0]
+
+#         if len(spiking) > 0:
+
+#             first_neuron = spiking[0].item()
+
+#             return assignments[first_neuron].item()
+
+#     # fallback if nothing spikes
+#     return winner_take_all_decoder(output_spikes, assignments)
+
+
+# def threshold_decoder(output_spikes, assignments, threshold=2):
+
+#     spike_counts = output_spikes.sum(0)
+
+#     above_threshold = torch.where(spike_counts >= threshold)[0]
+
+#     if len(above_threshold) > 0:
+
+#         neuron = above_threshold[0].item()
+
+#         return assignments[neuron].item()
+
+#     return winner_take_all_decoder(output_spikes, assignments)
+
+# acc_history = []
+# iter_history = []
+
+
+# #accuaracy calcultion 
+
+# correct = 0
+# total = 0
+
+# conf_matrix = torch.zeros(10, 10)
+
+# pbar = tqdm(enumerate(dataloader))
+
+# for i, dataPoint in pbar:
+
+#     if i > n_iters:
+#         break
+
+
+#     # preprocess image
+#     datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
+
+#     label = dataPoint["label"]
+
+
+#     # run network
+#     network.run(
+#         inputs={"I": datum},time=time,)
+
+
+
+#     output_spikes = spikes["O"].get("s")
+
+#     prediction = winner_take_all_decoder(output_spikes, assignments)
+
+
+#     total += 1
+
+#     true_label = label.item()
+#     pred_label = prediction
+
+#     if prediction == true_label:
+#         correct += 1
+
+#     conf_matrix[true_label, pred_label] += 1
+
+#     running_acc = correct / total
+
+#     # store values for plotting
+#     acc_history.append(running_acc)
+#     iter_history.append(i)
+
+#     network.reset_state_variables()
+
+
+
+# print("\nAccuracy: %.2f %%" % (100.0 * correct / total))
+
+
+# print("\nConfusion Matrix:")
+# print(conf_matrix)
+
+
+# plt.figure()
+# plt.imshow(conf_matrix, interpolation="nearest")
+# plt.title("Confusion Matrix")
+# plt.xlabel("Predicted Label")
+# plt.ylabel("True Label")
+# plt.colorbar()
+# plt.xticks(range(10))
+# plt.yticks(range(10))
+# conf_matrix_path = f"/cluster/home/spal02/bindsnet_graphs/conf_matrix/conf_matrix_job_{job_id}.png"
+# plt.savefig(conf_matrix_path, dpi=300, bbox_inches="tight")
+# plt.close()
+
+
+
+# plt.figure()
+# plt.plot(iter_history, acc_history)
+# plt.xlabel("Iteration")
+# plt.ylabel("Accuracy")
+# plt.title("Accuracy over time")
+# plt.grid(True)
+# accuracy_path = f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/accuracy_job_{job_id}.png"
+# plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
+# plt.close()
 
 for digit in range(10):
     if digit_counts[digit] > 0:
         reservoir_response[digit] /= digit_counts[digit]
-
-
-
-print("Neuron assignments:")
-print(assignments)
-
-##############################################################
-# READOUT METHODS
-##############################################################
-
-def winner_take_all_decoder(output_spikes, assignments):
-    spike_counts = output_spikes.sum(0)
-
-    winning_neuron = spike_counts.argmax().item()
-
-    return assignments[winning_neuron].item()
-
-
-def first_spike_decoder(output_spikes, assignments):
-
-    for t in range(output_spikes.shape[0]):
-
-        spiking = torch.where(output_spikes[t] > 0)[0]
-
-        if len(spiking) > 0:
-
-            first_neuron = spiking[0].item()
-
-            return assignments[first_neuron].item()
-
-    # fallback if nothing spikes
-    return winner_take_all_decoder(output_spikes, assignments)
-
-
-def threshold_decoder(output_spikes, assignments, threshold=2):
-
-    spike_counts = output_spikes.sum(0)
-
-    above_threshold = torch.where(spike_counts >= threshold)[0]
-
-    if len(above_threshold) > 0:
-
-        neuron = above_threshold[0].item()
-
-        return assignments[neuron].item()
-
-    return winner_take_all_decoder(output_spikes, assignments)
-
-acc_history = []
-iter_history = []
-
-
-#accuaracy calcultion 
-
-correct = 0
-total = 0
-
-conf_matrix = torch.zeros(10, 10)
-
-pbar = tqdm(enumerate(dataloader))
-
-for i, dataPoint in pbar:
-
-    if i > n_iters:
-        break
-
-
-    # preprocess image
-    datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
-
-    label = dataPoint["label"]
-
-
-    # run network
-    network.run(
-        inputs={"I": datum},time=time,)
-
-
-
-    output_spikes = spikes["O"].get("s")
-
-    prediction = winner_take_all_decoder(output_spikes, assignments)
-
-
-    total += 1
-
-    true_label = label.item()
-    pred_label = prediction
-
-    if prediction == true_label:
-        correct += 1
-
-    conf_matrix[true_label, pred_label] += 1
-
-    running_acc = correct / total
-
-    # store values for plotting
-    acc_history.append(running_acc)
-    iter_history.append(i)
-
-    network.reset_state_variables()
-
-
-
-print("\nAccuracy: %.2f %%" % (100.0 * correct / total))
-
-
-print("\nConfusion Matrix:")
-print(conf_matrix)
-
-
-plt.figure()
-plt.imshow(conf_matrix, interpolation="nearest")
-plt.title("Confusion Matrix")
-plt.xlabel("Predicted Label")
-plt.ylabel("True Label")
-plt.colorbar()
-plt.xticks(range(10))
-plt.yticks(range(10))
-conf_matrix_path = f"/cluster/home/spal02/bindsnet_graphs/conf_matrix/conf_matrix_job_{job_id}.png"
-plt.savefig(conf_matrix_path, dpi=300, bbox_inches="tight")
-plt.close()
-
-
-
-plt.figure()
-plt.plot(iter_history, acc_history)
-plt.xlabel("Iteration")
-plt.ylabel("Accuracy")
-plt.title("Accuracy over time")
-plt.grid(True)
-accuracy_path = f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/accuracy_job_{job_id}.png"
-plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
-plt.close()
-
 
 plt.figure(figsize=(18,6))
 
