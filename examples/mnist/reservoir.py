@@ -114,7 +114,7 @@ C2 = MulticompartmentConnection(source = reservoir, target = reservoir, device =
 
 # Reservoir -> Output (STDP)
 # Rand goes from 0 to 1 meaning that all the weights will be positive aka excitaory
-C3_w = 0.5 * torch.rand(reservoir.n, output.n)
+C3_w = 0.1 * torch.rand(reservoir.n, output.n)
 RO_weight_feature = Weight(
     name="ROweight",
     value=C3_w,
@@ -133,7 +133,7 @@ print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
 # Output -> Output (recurrent)
-inh = -10 * (torch.ones(output.n, output.n)- torch.eye(output.n))
+inh = -20 * (torch.ones(output.n, output.n)- torch.eye(output.n))
 
 output_inhibition_weight_feature = Weight(name="",value=inh)
 pipeline = [output_inhibition_weight_feature]
@@ -345,7 +345,11 @@ assignments = torch.zeros(10, dtype=torch.long)
 
 # proportions[output neuron][digit]
 # creates a 10x10 matrix (digits x neurons num) tp track how many spikes each neuron porduces when seeing each digit
-proportions = torch.zeros(10, 10)
+# reservoir_response[digit][reservoir neuron]
+reservoir_response = torch.zeros(10, n_neurons)
+
+# Number of examples seen for each digit
+digit_counts = torch.zeros(10)
 
 
 # Run training images through the trained network
@@ -365,24 +369,24 @@ for i, dataPoint in enumerate(dataloader):
     network.run(inputs={"I": datum},time=time,)
 
    
-    # count output spikes for each neuron
-    # RuntimeError: output with shape [10] doesn't match the broadcast shape [1, 10] --> need squeeze
-    spike_counts = spikes["O"].get("s").sum(0).squeeze()
+    # Count reservoir spikes (500 neurons)
+    reservoir_counts = spikes["R"].get("s").sum(0).squeeze()
 
+    digit = label.item()
 
-    # Add spike counts to the corresponding digit
-    # label.item() gives the true digit (0-9)
-    # supposed label = 7 and spike_counts = {1,2,4,,6,7,83,}.... then proprotions gets updated neuron __ got __ spieks for digit __
-    proportions[:, label.item()] += spike_counts
+    # Add this image's spike counts
+    reservoir_response[digit] += reservoir_counts
+
+    # Count how many examples of this digit we've seen
+    digit_counts[digit] += 1
 
 
     network.reset_state_variables()
 
+for digit in range(10):
+    if digit_counts[digit] > 0:
+        reservoir_response[digit] /= digit_counts[digit]
 
-
-#assigns each output neuron the digit it responded to most
-for neuron in range(10):
-    assignments[neuron] = torch.argmax(proportions[neuron])
 
 
 print("Neuron assignments:")
@@ -515,4 +519,31 @@ plt.title("Accuracy over time")
 plt.grid(True)
 accuracy_path = f"/cluster/home/spal02/bindsnet_graphs/spike_graphs/accuracy_job_{job_id}.png"
 plt.savefig(accuracy_path, dpi=300, bbox_inches="tight")
+plt.close()
+
+
+plt.figure(figsize=(18,6))
+
+plt.imshow(
+    reservoir_response.numpy(),
+    aspect="auto",
+    cmap="hot",
+    interpolation="nearest",
+)
+
+plt.xlabel("reservoir neuron")
+plt.ylabel("digit")
+plt.title("reservoir neuron activity")
+
+plt.xticks(np.arange(0, n_neurons + 1, 50))
+plt.yticks(range(10))
+
+plt.colorbar(label="avg spike count")
+
+response_path = (
+    f"/cluster/home/spal02/bindsnet_graphs/"
+    f"reservoir_response_job_{job_id}.png"
+)
+
+plt.savefig(response_path, dpi=300, bbox_inches="tight")
 plt.close()
