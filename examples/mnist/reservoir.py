@@ -8,6 +8,11 @@ import torch.nn as nn
 from torchvision import transforms
 from tqdm import tqdm
 
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix
+
+
 from bindsnet.analysis.plotting import (
     plot_input,
     plot_spikes,
@@ -197,13 +202,17 @@ n_iters = examples  # 500 images
 reservoir_response = torch.zeros(10, n_neurons)
 digit_counts = torch.zeros(10)
 
+# Store reservoir activity for logistic regression
+all_reservoir_data = []
+all_labels = []
+
 # dataloader - holds every mnist image (image, enocded_image, label
 # (1, imag0),, etc
 pbar = tqdm(enumerate(dataloader))
 
 
 for i, dataPoint in pbar:
-    if i > n_iters:
+    if i >= n_iters:
         break
     # Extract & resize the MNIST samples image data for training
     #       int(time / dt)  -> length of spike train
@@ -224,9 +233,13 @@ for i, dataPoint in pbar:
 
     digit = label.item()
 
-    reservoir_response[digit] += reservoir_counts
-    digit_counts[digit] += 1
+    # Store this image's reservoir activity for logistic regression
+    all_reservoir_data.append(reservoir_counts.cpu())
+    all_labels.append(digit)
 
+    # Store activity for heatmap
+    reservoir_response[digit] += reservoir_counts.cpu()
+    digit_counts[digit] += 1
     # if i % 50 == 0:
     #     print(f"\nIteration {i}")
 
@@ -491,6 +504,55 @@ for i, dataPoint in pbar:
 for digit in range(10):
     if digit_counts[digit] > 0:
         reservoir_response[digit] /= digit_counts[digit]
+
+
+# ##############################################################
+# LOGISTIC REGRESSION READOUT
+# ##############################################################
+
+# Convert collected reservoir activity into tensors
+X = torch.stack(all_reservoir_data).numpy()
+y = np.array(all_labels)
+
+print("\nReservoir data shape:", X.shape)
+print("Labels shape:", y.shape)
+
+# Split reservoir activity into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.2,
+    random_state=seed,
+    stratify=y,
+)
+
+# Create logistic regression classifier
+logistic_model = LogisticRegression(
+    max_iter=1000,
+    random_state=seed
+)
+
+# Train logistic regression using reservoir activity
+logistic_model.fit(X_train, y_train)
+
+# Predict digit labels
+y_pred = logistic_model.predict(X_test)
+
+# Calculate accuracy
+logistic_accuracy = accuracy_score(y_test, y_pred)
+
+print("\n===================================")
+print("LOGISTIC REGRESSION RESULTS")
+print("===================================")
+print(f"Training samples: {len(X_train)}")
+print(f"Testing samples: {len(X_test)}")
+print(f"Logistic Regression Accuracy: {100 * logistic_accuracy:.2f}%")
+
+# Confusion matrix
+lr_conf_matrix = confusion_matrix(y_test, y_pred)
+
+print("\nLogistic Regression Confusion Matrix:")
+print(lr_conf_matrix)
 
 plt.figure(figsize=(18,6))
 
