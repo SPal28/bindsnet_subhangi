@@ -541,17 +541,17 @@ y_pred = logistic_model.predict(X_test)
 # Calculate accuracy
 logistic_accuracy = accuracy_score(y_test, y_pred)
 
-print("\n===================================")
-print("LOGISTIC REGRESSION RESULTS")
-print("===================================")
-print(f"Training samples: {len(X_train)}")
-print(f"Testing samples: {len(X_test)}")
-print(f"Logistic Regression Accuracy: {100 * logistic_accuracy:.2f}%")
+
+print("LR results:")
+
+print(f"training samples: {len(X_train)}")
+print(f"testing samples: {len(X_test)}")
+print(f"LR accuracy: {100 * logistic_accuracy:.2f}%")
 
 # Confusion matrix
 lr_conf_matrix = confusion_matrix(y_test, y_pred)
 
-print("\nLogistic Regression Confusion Matrix:")
+print("\nLR confusion matrix:")
 print(lr_conf_matrix)
 
 plt.figure(figsize=(18,6))
