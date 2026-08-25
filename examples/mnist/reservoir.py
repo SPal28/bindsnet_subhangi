@@ -17,6 +17,7 @@ from bindsnet.analysis.plotting import (
 from bindsnet.datasets import MNIST
 from bindsnet.encoding import PoissonEncoder
 from bindsnet.network import Network
+# note: delete mask
 from bindsnet.network.topology_features import Probability, Weight, Mask
 from bindsnet.learning.MCC_learning import PostPre
 
@@ -81,16 +82,16 @@ network = Network(dt=dt)
 inpt = Input(784, shape=(1, 28, 28), traces = True)
 network.add_layer(inpt, name="I")
 
-# Reservoir layer - each neurons recieves a voltage, reaches threshold, spike, and resets 
+# reservoir layer- each neurons recieves a voltage, reaches threshold spike, and resets 
 # thresh represents biologically inspired neurons
 reservoir = LIFNodes(n_neurons, traces=True, thresh = -52 + np.random.randn(n_neurons).astype(float),)
 network.add_layer(reservoir, name = "R")
 
-# Output layer - creates 10 neurons 
+# output layer - creates 10 neurons 
 output = LIFNodes(10, traces=True, thresh=-55)
 network.add_layer(output, name="O")
 
-# Input -> Reservoir 
+# input -> reservoir 
 C1_w = 0.5 * torch.randn(inpt.n, reservoir.n)
 
 IR_weight_feature = Weight(name="IRweight", value=C1_w)
@@ -101,7 +102,7 @@ C1 = MulticompartmentConnection(source = inpt, target = reservoir, device = devi
 # C1 = Connection(source=inpt,target=reservoir,w=0.5 * torch.randn(inpt.n, reservoir.n),)
 
 
-# Reservoir -> Reservoir (recurrent)
+# reservoir -> reservoir (recurrent)
 # rand - biological (meaning that it shouldnt be both negative or positive)
 C2_w = 0.5 * torch.randn(reservoir.n, reservoir.n)
 
@@ -112,8 +113,8 @@ C2 = MulticompartmentConnection(source = reservoir, target = reservoir, device =
 # C2 = Connection(source=reservoir,target=reservoir,w=0.5 * torch.randn(reservoir.n, reservoir.n),)
 
 
-# Reservoir -> Output (STDP)
-# Rand goes from 0 to 1 meaning that all the weights will be positive aka excitaory
+# reservoir -> output (STDP)
+# rand goes from 0 to 1 meaning that all the weights will be positive aka excitaory
 C3_w = 0.5 * torch.rand(reservoir.n, output.n)
 RO_weight_feature = Weight(
     name="ROweight",
@@ -127,12 +128,12 @@ pipeline = [RO_weight_feature]
 C3 = MulticompartmentConnection(source=reservoir, target=output, device=device, pipeline=pipeline)
 # C3 = Connection(source=reservoir,target=output,w=0.1 * torch.rand(reservoir.n, output.n),update_rule=PostPre,nu=(1e-2, 1e-2),)
 
-# DEBUG: prints the first 5 neuron weights in the 500x10 matrix 
+# debug: prints the first 5 neuron weights in the 500x10 matrix 
 print("Initial C3 weights:")
 print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
-# Output -> Output (recurrent)
+# output -> output (recurrent)
 inh = -5 * (torch.ones(output.n, output.n)- torch.eye(output.n))
 
 output_inhibition_weight_feature = Weight(name="",value=inh)
@@ -192,7 +193,7 @@ dataloader = torch.utils.data.DataLoader(
 
 # Run training data on reservoir computer and store (spikes per neuron, label) per example.
 # Note: Because this is a reservoir network, no adjustments of neuron parameters occurs in this phase.
-n_iters = examples  # 500 images 
+n_iters = examples  # 60,000 images 
 neuron_spike_history = []
 weight_sum_history = []
 # dataloader - holds every mnist image (image, enocded_image, label
@@ -217,9 +218,7 @@ for i, dataPoint in pbar:
     # for each timestep it does this: input spikes, update reservoir neurons, reservoir neurons spike, update output neurons, output neurons spike, apply STDP to reservoir,-> output weights 
     network.run(inputs={"I": datum}, time=time)
 
-
-
-    #NEW: record per-neuron spikes and C3 weight sums this iteration
+    # debug: record per-neuron spikes and C3 weight sums this iteration
     neuron_spike_history.append(spikes["O"].get("s").sum(0).squeeze().clone())
     weight_sum_history.append(C3_w.sum(0).clone())
 
@@ -258,9 +257,9 @@ for i, dataPoint in pbar:
         plt.pause(1e-8)
     network.reset_state_variables()
 
-# --- NEW: plot per-neuron spike activity and weight sums over training ---
-spike_history_tensor = torch.stack(neuron_spike_history)   # [n_iters, 10]
-weight_sum_tensor = torch.stack(weight_sum_history)         # [n_iters, 10]
+# debug: plot per-neuron spike activity and weight sums over training
+spike_history_tensor = torch.stack(neuron_spike_history)   
+weight_sum_tensor = torch.stack(weight_sum_history)        
 
 plt.figure()
 for neuron in range(10):
@@ -292,11 +291,11 @@ print(C3_w[:5])
 print("Mean C3 weight:", C3_w.mean())
 
 # reservoir to digit cumulative matrix 
-# Rows = 100 reservoir neurons
-# Columns = 10 MNIST digit classes
+# rows = 100 reservoir neurons
+# columns = 10 MNIST digit classes
 #
-# Each entry represents the cumulative association between
-# a reservoir neuron and a digit.
+# each entry represents the cumulative association between
+# a reservoir neuron and a digit
 
 reservoir_digit_matrix = torch.zeros(
     n_neurons,
@@ -307,58 +306,40 @@ reservoir_digit_matrix = torch.zeros(
 print("Initial reservoir-digit matrix shape:")
 print(reservoir_digit_matrix.shape)
 
-
-
-
-
-
-
 # read out methods
 
+# WTA: counts spikes form eacg of the reservoir neurons and finds the neuron
+# with the most spikes and the digit with the strongest association is the 
+# prediction
 def winner_take_all_decoder(reservoir_spikes, reservoir_digit_matrix):
 
-    # Count spikes from each of the 500 reservoir neurons.
     reservoir_spike_counts = reservoir_spikes.sum(0).squeeze()
-
-    # Reservoir neuron with the most spikes wins.
     winning_neuron = reservoir_spike_counts.argmax().item()
-
-    # Number of spikes produced by the winning neuron.
     winning_spike_count = reservoir_spike_counts[winning_neuron]
-
-    # Look at the winning neuron's row in the 500x10 matrix.
     winning_neuron_digit_scores = reservoir_digit_matrix[winning_neuron]
-
-    # Digit with the strongest association is the prediction.
     prediction = winning_neuron_digit_scores.argmax().item()
 
     return prediction, winning_neuron, winning_spike_count
-
+# first spike wins!
 def first_spike_decoder(reservoir_spikes, reservoir_digit_matrix):
 
-    # Go through time and find the first reservoir neuron to spike.
     for t in range(reservoir_spikes.shape[0]):
-
         spiking_neurons = torch.where(reservoir_spikes[t] > 0)[0]
-
         if len(spiking_neurons) > 0:
-
             first_neuron = spiking_neurons[0].item()
 
-            # Use that neuron's digit association.
+           
             neuron_digit_scores = reservoir_digit_matrix[first_neuron]
-
             prediction = neuron_digit_scores.argmax().item()
 
             return prediction, first_neuron
 
-    # If no neuron spikes, return a default prediction.
+    #if no neuron spikes, return a default prediction
     return 0, 0
 
 
 acc_history = []
 iter_history = []
-
 
 # section off the 60,000 images 
 block_size = 10000
@@ -381,17 +362,12 @@ for i, dataPoint in pbar:
     if i >= n_iters:
         break
     #taking the poisson-encoded images and reshaping it 
-    datum = dataPoint["encoded_image"].view(
-        int(time / dt), 1, 1, 28, 28
-    ).to(device)
+    datum = dataPoint["encoded_image"].view(int(time / dt), 1, 1, 28, 28).to(device)
     # get the actual label, not used when running the network
     true_label = dataPoint["label"].item()
 
     #run network
-    network.run(
-        inputs={"I": datum},
-        time=time,
-    )
+    network.run(inputs={"I": datum},time=time,)
 
     #get the spkies from the r layer (not the one that spiked the msot)
     #FIX:  get the spikes from the very last layer
@@ -420,11 +396,8 @@ for i, dataPoint in pbar:
     acc_history.append(running_acc)
     iter_history.append(i)
 
-        # ============================================================
-    # EVERY 10,000 IMAGES:
-    # SAVE BOTH MATRICES + BOTH HEATMAPS, THEN RESET
-    # ============================================================
-
+    # for every 10,000 images save both the matrices and heatmaps , then reset
+    # note: some graph code was generated with the help of ChatGPT for clarity
     if (i + 1) % block_size == 0:
 
         completed_images = i + 1
@@ -433,15 +406,12 @@ for i, dataPoint in pbar:
 
         print("\n")
         print("==============================================")
-        print(f"COMPLETED BLOCK {block_number}")
-        print(f"Images processed: {block_start}-{completed_images}")
-        print(f"Block accuracy: {100 * running_acc:.2f}%")
+        print(f"completed block {block_number}")
+        print(f"images processed: {block_start}-{completed_images}")
+        print(f"block accuracy: {100 * running_acc:.2f}%")
         print("==============================================")
 
-        # ========================================================
-        # 1. SAVE 100 x 10 RESERVOIR-DIGIT MATRIX
-        # ========================================================
-
+        # save the 100x10 reservoir-digit matrix
         reservoir_matrix_path = (
             f"/cluster/home/spal02/bindsnet_graphs/"
             f"conf_matrix/"
@@ -460,9 +430,7 @@ for i, dataPoint in pbar:
             f"{reservoir_matrix_path}"
         )
 
-        # ========================================================
-        # 2. SAVE 10 x 10 CONFUSION MATRIX
-        # ========================================================
+        # save 10 x 10 matrix 
 
         conf_matrix_path = (
             f"/cluster/home/spal02/bindsnet_graphs/"
@@ -482,9 +450,7 @@ for i, dataPoint in pbar:
             f"{conf_matrix_path}"
         )
 
-        # ========================================================
-        # 3. SAVE 10 x 10 CONFUSION MATRIX AS HEATMAP
-        # ========================================================
+        # save 10x10 matrix has a heatmap 
 
         plt.figure(figsize=(8, 6))
 
@@ -527,9 +493,7 @@ for i, dataPoint in pbar:
             f"{conf_heatmap_path}"
         )
 
-        # ========================================================
-        # 4. SAVE 100 x 10 RESERVOIR-DIGIT MATRIX AS HEATMAP
-        # ========================================================
+        # save 100x10 matrix as a heatmap
 
         plt.figure(figsize=(10, 8))
 
@@ -573,9 +537,7 @@ for i, dataPoint in pbar:
             f"{reservoir_heatmap_path}"
         )
 
-        # ========================================================
-        # 5. PRINT THE MATRICES
-        # ========================================================
+        #print matrices 
 
         print("\n100x10 Reservoir-Digit Matrix for this block:")
         print(reservoir_digit_matrix)
@@ -583,9 +545,7 @@ for i, dataPoint in pbar:
         print("\n10x10 Confusion Matrix for this block:")
         print(conf_matrix)
 
-        # ========================================================
-        # 6. RESET BOTH MATRICES AND ACCURACY COUNTERS
-        # ========================================================
+        #reset matrices and accuarcy counters 
 
         conf_matrix.zero_()
         reservoir_digit_matrix.zero_()
@@ -601,4 +561,3 @@ for i, dataPoint in pbar:
     #reset network
 
     network.reset_state_variables()
-
