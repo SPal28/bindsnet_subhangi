@@ -28,6 +28,7 @@ from bindsnet.network.topology import Connection
 from bindsnet.utils import get_square_weights
 from bindsnet.network.topology import MulticompartmentConnection
 
+# Keep output filenames tied to the SLURM job when running on the cluster.
 job_id = os.environ.get("SLURM_JOB_ID", "local")
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=0)
@@ -76,9 +77,11 @@ else:
 torch.set_num_threads(os.cpu_count() - 1)
 print("Running on Device = ", device)
 # dt = simulation timestep
+# The network uses dt as the time step for each simualtion update.
 network = Network(dt=dt)
 
 # Input layer - 784 neurons, 1 image channel (grayscale), 28x28 grid, traces stores the spikes
+# Each 28x28 MNIST image is representated by 784 input neurons.
 inpt = Input(784, shape=(1, 28, 28), traces = True)
 network.add_layer(inpt, name="I")
 
@@ -115,6 +118,7 @@ C2 = MulticompartmentConnection(source = reservoir, target = reservoir, device =
 
 # reservoir -> output (STDP)
 # rand goes from 0 to 1 meaning that all the weights will be positive aka excitaory
+# these nonnegative starting weights let the reservoir excite output neurons
 C3_w = 0.5 * torch.rand(reservoir.n, output.n)
 RO_weight_feature = Weight(
     name="ROweight",
@@ -149,6 +153,7 @@ network.add_connection(C4, source="O", target="O")
 
 # Monitors for visualizing activity
 spikes = {}
+# loops thru each layer (i, r ,o)
 for l in network.layers:
     # "s" is the spiking variable which records the num of spikes in each layer 
     spikes[l] = Monitor(network.layers[l], ["s"], time=time, device=device)
@@ -167,9 +172,10 @@ if gpu:
 
 # Get MNIST training images and labels.
 # Load MNIST data.
+# poisson encdoing turns pixel intensities into spike trains over time
 dataset = MNIST(
-    PoissonEncoder(time=time, dt=dt),
-    None,
+    PoissonEncoder(time=time, dt=dt),               # converts each image inot a poission spike train
+    None,                                           # no addtional target encoder -- ??
     root=os.path.join("..", "..", "data", "MNIST"),
     download=True,
     transform=transforms.Compose(
@@ -186,13 +192,14 @@ weights_im2 = None
 voltage_ims = None
 voltage_axes = None
 
-# Create a dataloader to iterate and batch data
+# create a dataloader to iterate thru MNIST images in the program
+# shuffle is set to false to stay in its original order 
 dataloader = torch.utils.data.DataLoader(
     dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=gpu
 )
 
-# Run training data on reservoir computer and store (spikes per neuron, label) per example.
-# Note: Because this is a reservoir network, no adjustments of neuron parameters occurs in this phase.
+# run training data on reservoir computer and store (spikes per neuron, label) per example
+# note: Because this is a reservoir network, no adjustments of neuron parameters occurs in this phase
 n_iters = examples  # 60,000 images 
 neuron_spike_history = []
 weight_sum_history = []
@@ -297,6 +304,7 @@ print("Mean C3 weight:", C3_w.mean())
 # each entry represents the cumulative association between
 # a reservoir neuron and a digit
 
+# Each row tracks a reservoir neuron's cummulative association with each digit class.
 reservoir_digit_matrix = torch.zeros(
     n_neurons,
     10,
@@ -311,6 +319,7 @@ print(reservoir_digit_matrix.shape)
 # WTA: counts spikes form eacg of the reservoir neurons and finds the neuron
 # with the most spikes and the digit with the strongest association is the 
 # prediction
+# WTA uses the most active reservoir neuron to make a prediction.
 def winner_take_all_decoder(reservoir_spikes, reservoir_digit_matrix):
 
     reservoir_spike_counts = reservoir_spikes.sum(0).squeeze()
@@ -321,6 +330,7 @@ def winner_take_all_decoder(reservoir_spikes, reservoir_digit_matrix):
 
     return prediction, winning_neuron, winning_spike_count
 # first spike wins!
+# This decoder uses the first reservoir neuron to spike, rather than total activity.
 def first_spike_decoder(reservoir_spikes, reservoir_digit_matrix):
 
     for t in range(reservoir_spikes.shape[0]):
@@ -354,6 +364,7 @@ iter_history = []
 #10 x 10 confusion matrix for the CURRENT 10,000 image sections
 #rows = true digit
 #columns = predicted digit
+# The confussion matrix counts each true digit against its predicted digit.
 conf_matrix = torch.zeros(10, 10, device=device)
 
 pbar = tqdm(enumerate(dataloader))
@@ -559,5 +570,4 @@ for i, dataPoint in pbar:
         )
 
     #reset network
-
     network.reset_state_variables()
