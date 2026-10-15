@@ -236,8 +236,8 @@ for i, dataPoint in pbar:
         print("=" * 46)
 
         # Save matrices and heatmaps
-        torch.save(output_digit_matrix.detach().cpu(), os.path.join(output_dir, f"output_digit_matrix_images_{block_start}_{completed_images}_job_{job_id}.pt"))
-        torch.save(conf_matrix.detach().cpu(), os.path.join(output_dir, f"conf_matrix_images_{block_start}_{completed_images}_job_{job_id}.pt"))
+        torch.save(output_digit_matrix.detach().cpu(), os.path.join(output_dir, f"output_digit_matrix_images_{block_start}_{completed_images}_job_{job_id}.png"))
+        torch.save(conf_matrix.detach().cpu(), os.path.join(output_dir, f"conf_matrix_images_{block_start}_{completed_images}_job_{job_id}.png"))
 
         # Plot Confusion Matrix Heatmap
         plt.figure(figsize=(8, 6))
