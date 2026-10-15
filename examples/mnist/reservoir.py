@@ -8,11 +8,7 @@ import torch.nn as nn
 from torchvision import transforms
 from tqdm import tqdm
 
-from bindsnet.analysis.plotting import (
-    plot_input,
-    plot_spikes,
-    plot_voltages,
-    plot_weights,
+from bindsnet.analysis.plotting import (plot_input, plot_spikes,plot_voltages,plot_weights,
 )
 from bindsnet.datasets import MNIST
 from bindsnet.encoding import PoissonEncoder
@@ -30,7 +26,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--n_neurons", type=int, default=100)
 parser.add_argument("--n_epochs", type=int, default=1)
-parser.add_argument("--examples", type=int, default=10000)  # Default to test set size (10k)
+parser.add_argument("--examples", type=int, default=1000)  
 parser.add_argument("--n_workers", type=int, default=0)
 parser.add_argument("--time", type=int, default=250)
 parser.add_argument("--dt", type=float, default=1.0)
