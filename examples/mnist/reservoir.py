@@ -156,7 +156,7 @@ dataloader = torch.utils.data.DataLoader(
     dataset, batch_size=1, shuffle=False, num_workers=n_workers, pin_memory=gpu
 )
 
-# Decoders reading from Output layer spikes
+#FIX: one pass
 def winner_take_all_decoder(output_spikes, output_digit_matrix):
     output_spike_counts = output_spikes.sum(0).squeeze()
     if output_spike_counts.sum() == 0:
