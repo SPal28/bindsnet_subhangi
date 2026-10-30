@@ -8,19 +8,16 @@ import torch.nn as nn
 from torchvision import transforms
 from tqdm import tqdm
 
-from bindsnet.analysis.plotting import (plot_input, plot_spikes,plot_voltages,plot_weights,
-)
 from bindsnet.datasets import MNIST
 from bindsnet.encoding import PoissonEncoder
 from bindsnet.network import Network
-from bindsnet.network.topology_features import Probability, Weight, Mask
+from bindsnet.network.topology_features import Weight
 from bindsnet.learning.MCC_learning import PostPre
 from bindsnet.network.monitors import Monitor
 from bindsnet.network.nodes import Input, LIFNodes
-from bindsnet.network.topology import Connection, MulticompartmentConnection
-from bindsnet.utils import get_square_weights
+from bindsnet.network.topology import MulticompartmentConnection
 
-# Keep output filenames tied to the SLURM job when running on the cluster.
+# Checks if the script is running on SLURM
 job_id = os.environ.get("SLURM_JOB_ID", "local")
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=0)
@@ -33,10 +30,9 @@ parser.add_argument("--dt", type=float, default=1.0)
 parser.add_argument("--intensity", type=float, default=64)
 parser.add_argument("--progress_interval", type=int, default=10)
 parser.add_argument("--update_interval", type=int, default=250)
-parser.add_argument("--block_size", type=int, default=2000, help="Images per evaluation/saving block")
-parser.add_argument("--plot", dest="plot", action="store_true")
+parser.add_argument("--block_size", type=int, default=1000, help="Images per evaluation/saving block")
 parser.add_argument("--gpu", dest="gpu", action="store_true")
-parser.set_defaults(plot=False, gpu=False)
+parser.set_defaults(gpu=False)
 
 args = parser.parse_args()
 
@@ -51,7 +47,6 @@ intensity = args.intensity
 progress_interval = args.progress_interval
 update_interval = args.update_interval
 block_size = args.block_size
-plot = args.plot
 gpu = args.gpu
 
 np.random.seed(seed)
@@ -110,10 +105,6 @@ RO_weight_feature = Weight(
 )
 C3 = MulticompartmentConnection(source=reservoir, target=output, device=device, pipeline=[RO_weight_feature])
 
-print("Initial C3 weights:")
-print(C3_w[:5])
-print("Mean C3 weight:", C3_w.mean())
-
 # Output -> Output recurrent inhibition
 inh = -5.0 * (torch.ones(output.n, output.n) - torch.eye(output.n))
 output_inhibition_weight_feature = Weight(name="O_inh", value=inh)
@@ -146,7 +137,7 @@ dataset = MNIST(
     None,
     root=os.path.join("..", "..", "data", "MNIST"),
     download=True,
-    train=False,  # Using test set as requested
+    train=False,
     transform=transforms.Compose(
         [transforms.ToTensor(), transforms.Lambda(lambda x: x * intensity)]
     ),
@@ -156,7 +147,7 @@ dataloader = torch.utils.data.DataLoader(
     dataset, batch_size=1, shuffle=False, num_workers=n_workers, pin_memory=gpu
 )
 
-#FIX: one pass
+# Decoders
 def winner_take_all_decoder(output_spikes, output_digit_matrix):
     output_spike_counts = output_spikes.sum(0).squeeze()
     if output_spike_counts.sum() == 0:
@@ -177,19 +168,25 @@ def first_spike_decoder(output_spikes, output_digit_matrix):
             return prediction, first_neuron
     return 0, 0
 
-# Association Matrix: 10 Output neurons x 10 Digit classes
-output_digit_matrix = torch.zeros(10, 10, device=device)
-previous_block_matrix = torch.zeros(10, 10, device=device)
+
+# Initialize Tracking Matrices
+reservoir_digit_matrix = torch.zeros(100, 10, device=device) # 100 reservoir neurons x 10 digit classes
+output_digit_matrix = torch.zeros(10, 10, device=device)     # 10 output neurons x 10 digit classes
+conf_matrix = torch.zeros(10, 10, device=device)             # True vs Prediction confusion matrix
+previous_block_output_matrix = torch.zeros(10, 10, device=device)
 
 correct = 0
 total = 0
-acc_history = []
-iter_history = []
-conf_matrix = torch.zeros(10, 10, device=device)
 
-# Base directory for outputs (safe fallback if cluster path doesn't exist)
-output_dir = f"/cluster/home/spal02/bindsnet_graphs/conf_matrix/"
-os.makedirs(output_dir, exist_ok=True)
+# Base Directories for the 5 graph categories
+dir_res_assoc = "/cluster/home/spal02/bindsnet_graphs/100x10_reservoir/"
+dir_out_assoc = "/cluster/home/spal02/bindsnet_graphs/10x10 output/"
+dir_conf = "/cluster/home/spal02/bindsnet_graphs/10x10truepredict/"
+dir_res_spike = "/cluster/home/spal02/bindsnet_graphs/reservoirspiking/"
+dir_out_spike = "/cluster/home/spal02/bindsnet_graphs/outputspiking/"
+
+for d in [dir_res_assoc, dir_out_assoc, dir_conf, dir_res_spike, dir_out_spike]:
+    os.makedirs(d, exist_ok=True)
 
 pbar = tqdm(enumerate(dataloader), total=examples)
 for i, dataPoint in pbar:
@@ -200,34 +197,38 @@ for i, dataPoint in pbar:
     true_label = dataPoint["label"].item()
 
     network.run(inputs={"I": datum}, time=time)
+    
+    output_spikes = spikes["O"].get("s").squeeze(1)     # Shape: [time, 10]
+    reservoir_spikes = spikes["R"].get("s").squeeze(1)  # Shape: [time, 100]
 
-    # Get spikes from the output layer
-    output_spikes = spikes["O"].get("s")
-
-    # Predict using the previous block's accumulated association matrix (prevents zero-score learning loops)
-    scoring_matrix = previous_block_matrix if previous_block_matrix.sum() > 0 else output_digit_matrix
+    # Scoring & Prediction (using WTA decoder)
+    scoring_matrix = previous_block_output_matrix if previous_block_output_matrix.sum() > 0 else output_digit_matrix
     prediction, winning_neuron, winning_spike_count = winner_take_all_decoder(output_spikes, scoring_matrix)
 
     total += 1
     if prediction == true_label:
         correct += 1
 
+    # Update True vs Prediction Confusion Matrix
     conf_matrix[true_label, prediction] += 1
     
-    # Update current block's association matrix with output layer spikes
-    output_spike_counts = output_spikes.sum(0).squeeze()
+    # Update Output Association Matrix (10 x 10)
+    output_spike_counts = output_spikes.sum(0)
     if output_spike_counts.sum() > 0:
         winning_out_neuron = output_spike_counts.argmax().item()
         output_digit_matrix[winning_out_neuron, true_label] += output_spike_counts[winning_out_neuron].item()
 
-    running_acc = correct / total if total > 0 else 0.0
-    acc_history.append(running_acc)
-    iter_history.append(i)
+    # Update Reservoir Association Matrix (100 x 10)
+    reservoir_spike_counts = reservoir_spikes.sum(0)
+    if reservoir_spike_counts.sum() > 0:
+        reservoir_digit_matrix[:, true_label] += reservoir_spike_counts
 
+    # Save checkpoint graphs at the end of each block
     if (i + 1) % block_size == 0:
         completed_images = i + 1
         block_number = completed_images // block_size
         block_start = completed_images - block_size + 1
+        running_acc = correct / total if total > 0 else 0.0
 
         print("\n" + "=" * 46)
         print(f"Completed Block {block_number}")
@@ -235,26 +236,76 @@ for i, dataPoint in pbar:
         print(f"Block Accuracy: {running_acc * 100:.2f}%")
         print("=" * 46)
 
-        # Save matrices and heatmaps
-        torch.save(output_digit_matrix.detach().cpu(), os.path.join(output_dir, f"output_digit_matrix_images_{block_start}_{completed_images}_job_{job_id}.png"))
-        torch.save(conf_matrix.detach().cpu(), os.path.join(output_dir, f"conf_matrix_images_{block_start}_{completed_images}_job_{job_id}.png"))
+        res_cpu = reservoir_digit_matrix.detach().cpu().numpy()
+        out_cpu = output_digit_matrix.detach().cpu().numpy()
+        conf_cpu = conf_matrix.detach().cpu().numpy()
 
-        # Plot Confusion Matrix Heatmap
+        # 1. Reservoir Association Matrix Graph (100x10)
         plt.figure(figsize=(8, 6))
-        plt.imshow(conf_matrix.detach().cpu().numpy(), interpolation="nearest")
-        plt.title(f"Confusion Matrix\nImages {block_start}-{completed_images}")
+        plt.imshow(res_cpu, aspect="auto", interpolation="nearest", cmap="viridis")
+        plt.title(f"Reservoir Association Matrix (100x10)\nImages {block_start}-{completed_images}")
+        plt.xlabel("Digit Class (0-9)")
+        plt.ylabel("Reservoir Neuron Index (0-99)")
+        plt.colorbar()
+        plt.savefig(os.path.join(dir_res_assoc, f"reservoir_assoc_images_{block_start}_{completed_images}_job_{job_id}.png"), dpi=300, bbox_inches="tight")
+        plt.close()
+
+        # 2. Output Association Matrix Graph (10x10)
+        plt.figure(figsize=(6, 6))
+        plt.imshow(out_cpu, interpolation="nearest", cmap="viridis")
+        plt.title(f"Output Association Matrix (10x10)\nImages {block_start}-{completed_images}")
+        plt.xlabel("True Digit Class (0-9)")
+        plt.ylabel("Output Neuron Index (0-9)")
+        plt.colorbar()
+        plt.xticks(range(10))
+        plt.yticks(range(10))
+        plt.savefig(os.path.join(dir_out_assoc, f"output_assoc_images_{block_start}_{completed_images}_job_{job_id}.png"), dpi=300, bbox_inches="tight")
+        plt.close()
+
+        # 3. True vs Prediction Confusion Matrix Graph (10x10)
+        plt.figure(figsize=(6, 6))
+        plt.imshow(conf_cpu, interpolation="nearest", cmap="Blues")
+        plt.title(f"Confusion Matrix (True vs Pred)\nImages {block_start}-{completed_images}")
         plt.xlabel("Predicted Label")
         plt.ylabel("True Label")
         plt.colorbar()
         plt.xticks(range(10))
         plt.yticks(range(10))
-        plt.savefig(os.path.join(output_dir, f"WTA_conf_matrix_images_{block_start}_{completed_images}_job_{job_id}.png"), dpi=300, bbox_inches="tight")
+        plt.savefig(os.path.join(dir_conf, f"conf_matrix_images_{block_start}_{completed_images}_job_{job_id}.png"), dpi=300, bbox_inches="tight")
         plt.close()
 
-        # Carry over current matrix to previous block matrix for continuous evaluation
-        previous_block_matrix = output_digit_matrix.clone()
-        conf_matrix.zero_()
+        # 4. Reservoir Layer Spiking Raster Graph (Dead Network Check)
+        res_spike_np = reservoir_spikes.detach().cpu().numpy() # [time, 100]
+        time_steps_idx, neuron_idx = np.where(res_spike_np > 0)
+        plt.figure(figsize=(10, 4))
+        plt.scatter(time_steps_idx, neuron_idx, s=1, color="black")
+        plt.title(f"Reservoir Spikes (Last Image in Block {block_number})\nImages {block_start}-{completed_images}")
+        plt.xlabel("Time (ms)")
+        plt.ylabel("Reservoir Neuron Index")
+        plt.xlim(0, time)
+        plt.ylim(-1, 100)
+        plt.savefig(os.path.join(dir_res_spike, f"reservoir_spikes_images_{block_start}_{completed_images}_job_{job_id}.png"), dpi=300, bbox_inches="tight")
+        plt.close()
+
+        # 5. Output Layer Spiking Raster Graph (Dead Network Check)
+        out_spike_np = output_spikes.detach().cpu().numpy() # [time, 10]
+        time_steps_out, neuron_out = np.where(out_spike_np > 0)
+        plt.figure(figsize=(10, 3))
+        plt.scatter(time_steps_out, neuron_out, s=5, color="red")
+        plt.title(f"Output Spikes (Last Image in Block {block_number})\nImages {block_start}-{completed_images}")
+        plt.xlabel("Time (ms)")
+        plt.ylabel("Output Neuron Index")
+        plt.xlim(0, time)
+        plt.ylim(-1, 10)
+        plt.yticks(range(10))
+        plt.savefig(os.path.join(dir_out_spike, f"output_spikes_images_{block_start}_{completed_images}_job_{job_id}.png"), dpi=300, bbox_inches="tight")
+        plt.close()
+
+        # Carry over and Reset for the next 1,000-image chunk
+        previous_block_output_matrix = output_digit_matrix.clone()
+        reservoir_digit_matrix.zero_()
         output_digit_matrix.zero_()
+        conf_matrix.zero_()
         correct = 0
         total = 0
 
