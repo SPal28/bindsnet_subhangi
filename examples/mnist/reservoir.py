@@ -81,7 +81,7 @@ reservoir = LIFNodes(n_neurons, traces=True, thresh=-52 + np.random.randn(n_neur
 network.add_layer(reservoir, name="R")
 
 # Output layer - 10 neurons (representing digits 0-9)
-output = LIFNodes(10, traces=True, thresh=-40)
+output = LIFNodes(10, traces=True, thresh=-45)
 network.add_layer(output, name="O")
 
 # Input -> Reservoir connection
