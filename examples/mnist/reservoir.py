@@ -81,7 +81,7 @@ reservoir = LIFNodes(n_neurons, traces=True, thresh=-52 + np.random.randn(n_neur
 network.add_layer(reservoir, name="R")
 
 # Output layer - 10 neurons (representing digits 0-9)
-output = LIFNodes(10, traces=True, thresh=-55)
+output = LIFNodes(10, traces=True, thresh=-40)
 network.add_layer(output, name="O")
 
 # Input -> Reservoir connection
@@ -108,7 +108,8 @@ C3 = MulticompartmentConnection(source=reservoir, target=output, device=device, 
 # Output -> Output recurrent inhibition
 inh = -5.0 * (torch.ones(output.n, output.n) - torch.eye(output.n))
 output_inhibition_weight_feature = Weight(name="O_inh", value=inh)
-C4 = MulticompartmentConnection(source=output, target=output, device=device, pipeline=[output_inhibition_weight_feature])
+C4 = MulticompartmentConnection(source=output, target=output, 
+                                device=device, pipeline=[output_inhibition_weight_feature])
 
 network.add_connection(C1, source="I", target="R")
 network.add_connection(C2, source="R", target="R")
