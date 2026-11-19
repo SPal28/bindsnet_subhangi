@@ -77,7 +77,7 @@ inpt = Input(784, shape=(1, 28, 28), traces=True)
 network.add_layer(inpt, name="I")
 
 # Reservoir layer
-reservoir = LIFNodes(n_neurons, traces=True, thresh=-40 + np.random.randn(n_neurons).astype(float))
+reservoir = LIFNodes(n_neurons, traces=True, thresh=-53 + np.random.randn(n_neurons).astype(float))
 network.add_layer(reservoir, name="R")
 
 # Output layer - 10 neurons (representing digits 0-9)
